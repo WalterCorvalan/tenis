@@ -14,15 +14,18 @@
   <div class="top-in">
     <div class="brand">
       <svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="15" fill="#d7e84a"/><path d="M4 8c8 3 8 13 0 16M28 8c-8 3-8 13 0 16" fill="none" stroke="#fff" stroke-width="2.4"/></svg>
-      <div>Agenda y caja<small>Clases de tenis</small></div>
+      <div>Agenda y caja<small>Clases de tenis · en pesos (ARS)</small></div>
     </div>
     <nav class="tabs" role="tablist" aria-label="Secciones">
       <button class="tab" role="tab" id="tab-cal" data-view="cal">Calendario</button>
       <button class="tab" role="tab" id="tab-sum" data-view="sum">Resumen</button>
     </nav>
+    <button class="sync" id="sync-btn" data-state="off"><span class="dot" aria-hidden="true"></span><span class="lbl">Sin nube</span></button>
     <div class="menu-wrap">
       <button class="icon-btn" id="menu-btn" aria-haspopup="true" aria-expanded="false">Copia ⋯</button>
       <div class="menu" id="menu" role="menu">
+        <button role="menuitem" data-act="cloud">☁ Guardar en la nube (Google Sheets)…</button>
+        <hr>
         <button role="menuitem" data-act="export-json">Descargar copia de seguridad</button>
         <button role="menuitem" data-act="import-json">Restaurar copia de seguridad…</button>
         <button role="menuitem" data-act="export-csv">Exportar a Excel (CSV)</button>
@@ -72,6 +75,23 @@
     <div class="form-actions hidden" id="another-row">
       <button type="submit" class="btn link grow" value="another">Guardar y agregar otro</button>
     </div>
+  </form>
+</dialog>
+
+<dialog id="dlg-cloud" aria-labelledby="cloud-title">
+  <form class="form" id="cloud-form" method="dialog" autocomplete="off">
+    <h2 id="cloud-title">☁ Guardar en la nube</h2>
+    <p class="small muted" style="margin:0">Los datos se guardan en una planilla de Google Sheets de su cuenta y se comparten entre celular y computadora.</p>
+    <p class="small muted" id="cloud-status" style="margin:0"></p>
+    <div class="field"><label for="c-url">URL de la aplicación web</label><input id="c-url" type="url" placeholder="https://script.google.com/macros/s/…/exec" spellcheck="false"></div>
+    <div class="field"><label for="c-key">Clave</label><input id="c-key" type="text" placeholder="La misma que está en el script" spellcheck="false" autocapitalize="off"></div>
+    <div class="form-actions">
+      <button type="button" class="btn out hidden" id="c-off">Desconectar</button>
+      <span class="grow"></span>
+      <button type="button" class="btn" id="c-close">Cerrar</button>
+      <button type="submit" class="btn primary">Guardar y conectar</button>
+    </div>
+    <div class="form-actions hidden" id="c-now-row"><button type="button" class="btn link grow" id="c-now">Sincronizar ahora</button></div>
   </form>
 </dialog>
 

@@ -10,12 +10,18 @@ Abrir `index.html` en el navegador (doble clic). No necesita instalar nada ni co
 - **Resumen**: ingresos, egresos y balance por **semana / mes / año**, gráfico día por día, **ranking de clientes que más ingresos dejan** y en qué se gasta.
 - **Copia ⋯**: descargar/restaurar copia de seguridad (JSON), exportar a Excel (CSV) o borrar todo.
 
-## Importante
+## Dónde se guardan los datos
 
-Los datos se guardan **en el navegador de ese dispositivo** (localStorage). No se sincronizan entre celular y computadora: para pasar los datos, descargar una copia y restaurarla en el otro dispositivo. Conviene descargar una copia de vez en cuando.
+- Siempre **en el navegador del dispositivo** (así abre rápido y funciona sin señal).
+- Opcional, recomendado: **Google Sheets** en la cuenta del entrenador. Se sincroniza solo entre celular y computadora y los datos se pueden abrir como planilla. Pasos en [`LEEME-NUBE.md`](LEEME-NUBE.md) (también explica cómo publicar la página en GitHub Pages).
+- Todo en **pesos argentinos (ARS)**.
+
+Conviene igual descargar una copia de seguridad de vez en cuando (menú “Copia ⋯”).
 
 ## Archivos
 
 - `index.html` – estructura
 - `styles.css` – estilos (claro/oscuro automático, adaptado a celular)
-- `app.js` – lógica
+- `app.js` – lógica y sincronización
+- `apps-script/Codigo.gs` – script de Google que conecta con la planilla
+- `LEEME-NUBE.md` – guía de configuración

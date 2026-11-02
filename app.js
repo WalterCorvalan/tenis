@@ -2,7 +2,7 @@
 'use strict';
 
 /* ============ Datos ============ */
-const KEY = 'tenis-caja-v1';
+const KEY = 'tenis-caja-v2', KEY_OLD = 'tenis-caja-v1', KEY_CLOUD = 'tenis-caja-nube';
 const CATS = {
   in:  ['Clase individual', 'Clase grupal', 'Torneo / evento', 'Otro ingreso'],
   out: ['Alquiler de cancha', 'Pelotas y material', 'Transporte', 'Otro gasto']
@@ -12,22 +12,56 @@ const DAYS_LONG = ['domingo','lunes','martes','miércoles','jueves','viernes','s
 const DAYS_SHORT = ['L','M','M','J','V','S','D'];
 
 let memoryOnly = false;
-let movs = load();
+let movs = [];          // movimientos vigentes
+let tombs = [];         // borrados {id, u}: hacen falta para que el borrado llegue a la nube
+let lastPush = 0;       // hasta cuándo se subieron los cambios locales a la nube
+let cfg = null;         // { url, key } de la nube, si está conectada
+loadAll();
 
-function load() {
+function loadAll() {
   try {
     const raw = localStorage.getItem(KEY);
-    const data = raw ? JSON.parse(raw) : [];
-    return Array.isArray(data) ? data.filter(validMov) : [];
-  } catch (e) { memoryOnly = true; return []; }
+    if (raw) {
+      const d = JSON.parse(raw);
+      movs = (d.movs || []).filter(validMov);
+      tombs = (d.tombs || []).filter(t => t && t.id);
+      lastPush = d.lastPush || 0;
+    } else {
+      const old = localStorage.getItem(KEY_OLD); // versión anterior: lista simple
+      if (old) { const now = Date.now(); movs = JSON.parse(old).filter(validMov).map(m => ({ ...m, u: now })); }
+    }
+    const c = localStorage.getItem(KEY_CLOUD);
+    cfg = c ? JSON.parse(c) : null;
+  } catch (e) { memoryOnly = true; }
 }
-function save() {
-  try { localStorage.setItem(KEY, JSON.stringify(movs)); }
+function persist() {
+  try { localStorage.setItem(KEY, JSON.stringify({ movs, tombs, lastPush })); }
   catch (e) { memoryOnly = true; render(); }
 }
+function save() { persist(); scheduleSync(); }
 function validMov(m) {
   return m && typeof m.id === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(m.date) &&
     (m.type === 'in' || m.type === 'out') && Number.isFinite(m.amount) && m.amount > 0;
+}
+
+/* Alta / edición / baja: cada cambio lleva la hora (u) para resolver conflictos entre dispositivos. */
+function putMov(rec) {
+  rec.u = Date.now();
+  tombs = tombs.filter(t => t.id !== rec.id);
+  const i = movs.findIndex(x => x.id === rec.id);
+  if (i >= 0) movs[i] = rec; else movs.push(rec);
+}
+function removeMov(m) {
+  movs = movs.filter(x => x.id !== m.id);
+  tombs = tombs.filter(t => t.id !== m.id);
+  tombs.push({ id: m.id, u: Date.now() });
+}
+function replaceAll(list) {
+  const now = Date.now(), keep = new Set(list.map(m => m.id));
+  const t = new Map(tombs.map(x => [x.id, x]));
+  movs.forEach(m => { if (!keep.has(m.id)) t.set(m.id, { id: m.id, u: now }); });
+  tombs = [...t.values()].filter(x => !keep.has(x.id));
+  movs = list.map(m => ({ ...m, u: now }));
 }
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
@@ -81,7 +115,7 @@ function render() {
   $('#tab-sum').setAttribute('aria-selected', ui.view === 'sum');
   let html = '';
   if (memoryOnly) html += `<div class="banner warn">⚠ Este navegador no permite guardar datos (modo privado o bloqueado). Lo que se cargue se perderá al cerrar. Usar “Descargar copia” para no perderlo.</div>`;
-  if (!movs.length) html += `<div class="banner"><span>👋 Todavía no hay movimientos. Tocar un día del calendario para cargar el primero.</span><button class="btn" data-act="sample">Probar con datos de ejemplo</button></div>`;
+  if (!movs.length) html += `<div class="banner"><span>👋 Todavía no hay movimientos. Tocar un día del calendario para cargar el primero.</span>${cfg ? '' : '<button class="btn" data-act="sample">Probar con datos de ejemplo</button>'}</div>`;
   html += ui.view === 'cal' ? renderCal() : renderSum();
   app.innerHTML = html;
 }
@@ -317,9 +351,9 @@ dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
 $('#f-del').addEventListener('click', () => {
   if (!editing) return;
   const removed = editing;
-  movs = movs.filter(m => m.id !== removed.id);
+  removeMov(removed);
   save(); dlg.close(); render();
-  toast('Movimiento eliminado', 'Deshacer', () => { movs.push(removed); save(); render(); });
+  toast('Movimiento eliminado', 'Deshacer', () => { putMov(removed); save(); render(); });
 });
 form.addEventListener('submit', e => {
   e.preventDefault();
@@ -334,7 +368,7 @@ form.addEventListener('submit', e => {
     client: type === 'in' ? $('#f-client').value.trim() : '',
     note: $('#f-note').value.trim()
   };
-  if (editing) movs[movs.indexOf(editing)] = rec; else movs.push(rec);
+  putMov(rec);
   save();
   const d = parse(date);
   ui.sel = date; ui.y = d.getFullYear(); ui.m = d.getMonth();
@@ -366,7 +400,7 @@ function download(name, text, type) {
 }
 function exportCSV() {
   const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
-  const rows = [['Fecha', 'Tipo', 'Categoría', 'Cliente', 'Nota', 'Monto']].concat(
+  const rows = [['Fecha', 'Tipo', 'Categoría', 'Cliente', 'Nota', 'Monto (ARS)']].concat(
     [...movs].sort((a, b) => a.date.localeCompare(b.date)).map(m => [m.date, m.type === 'in' ? 'Ingreso' : 'Egreso', m.category, m.client, m.note, String(m.amount).replace('.', ',')]));
   download(`tenis-movimientos-${today()}.csv`, '﻿' + rows.map(r => r.map(q).join(';')).join('\r\n'), 'text/csv;charset=utf-8');
 }
@@ -377,7 +411,7 @@ $('#file').addEventListener('change', async e => {
     const data = JSON.parse(await f.text());
     const list = (Array.isArray(data) ? data : data.movimientos).filter(validMov);
     if (!confirm(`Se encontraron ${list.length} movimientos. Esto reemplaza lo que hay cargado ahora (${movs.length}). ¿Continuar?`)) return;
-    movs = list; save(); render(); toast('Copia restaurada ✓');
+    replaceAll(list); save(); render(); toast('Copia restaurada ✓');
   } catch (err) { alert('No se pudo leer el archivo. Tiene que ser una copia descargada desde esta misma aplicación.'); }
 });
 
@@ -406,6 +440,139 @@ function sampleData() {
   return out;
 }
 
+/* ============ Nube (Google Sheets) ============ */
+let syncState = cfg ? 'idle' : 'off';   // off | idle | syncing | ok | error
+let syncMsg = '', lastOk = 0, syncing = false, pendingSync = false, syncTimer;
+
+function setSync(state, msg = '') {
+  syncState = state; syncMsg = msg;
+  const b = $('#sync-btn'); if (!b) return;
+  const label = {
+    off: 'Sin nube', idle: 'Nube', syncing: 'Sincronizando…',
+    ok: 'Guardado en la nube', error: navigator.onLine === false ? 'Sin conexión' : 'Error de nube'
+  }[state];
+  b.dataset.state = state;
+  b.querySelector('.lbl').textContent = label;
+  b.setAttribute('aria-label', label + (msg ? ': ' + msg : '') + '. Tocar para ver o configurar.');
+  b.title = msg || label;
+}
+function scheduleSync(delay = 1500) {
+  if (!cfg) return;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(sync, delay);
+}
+async function cloudCall(records) {
+  const ctl = new AbortController();
+  const to = setTimeout(() => ctl.abort(), 30000);
+  try {
+    const res = await fetch(cfg.url, {
+      method: 'POST', redirect: 'follow', signal: ctl.signal,
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },   // evita el "preflight" CORS
+      body: JSON.stringify({ key: cfg.key, records })
+    });
+    if (!res.ok) throw new Error('Respuesta HTTP ' + res.status);
+    let data;
+    try { data = await res.json(); }
+    catch (e) { throw new Error('La URL no respondió como se esperaba. ¿Se publicó con acceso para “Cualquier persona”?'); }
+    if (!data.ok) throw new Error(data.error || 'Error desconocido');
+    return data;
+  } catch (e) {
+    if (e.name === 'AbortError') throw new Error('Tardó demasiado en responder.');
+    if (e instanceof TypeError) throw new Error(navigator.onLine === false ? 'Sin conexión a internet.' : 'No se pudo conectar. Revisar la URL.');
+    throw e;
+  } finally { clearTimeout(to); }
+}
+/* Une lo recibido con lo local: para cada id gana el cambio más reciente. */
+function mergeRemote(remote) {
+  const local = new Map();
+  movs.forEach(m => local.set(m.id, { u: m.u || 0, rec: m }));
+  tombs.forEach(t => local.set(t.id, { u: t.u, del: true }));
+  let changed = false;
+  for (const r of remote) {
+    const l = local.get(r.id);
+    if (l && !(r.u > l.u)) continue;
+    changed = true;
+    local.set(r.id, r.del ? { u: r.u, del: true } : { u: r.u, rec: { id: r.id, date: r.date, type: r.type, amount: r.amount, category: r.category, client: r.client, note: r.note, u: r.u } });
+  }
+  movs = []; tombs = [];
+  for (const [id, l] of local) {
+    if (l.del) tombs.push({ id, u: l.u });
+    else if (validMov(l.rec)) movs.push(l.rec);
+  }
+  return changed;
+}
+async function sync() {
+  if (!cfg) return false;
+  if (syncing) { pendingSync = true; return false; }
+  syncing = true; setSync('syncing');
+  const started = Date.now();
+  let ok = false;
+  try {
+    const dirty = [...movs.filter(m => m.u > lastPush), ...tombs.filter(t => t.u > lastPush).map(t => ({ id: t.id, u: t.u, del: true }))];
+    const data = await cloudCall(dirty);
+    const changed = mergeRemote(data.records);
+    lastPush = started; lastOk = Date.now();
+    persist();
+    setSync('ok', 'Última sincronización ' + new Date(lastOk).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }));
+    if (changed) render();
+    ok = true;
+  } catch (e) {
+    setSync('error', e.message);
+  } finally {
+    syncing = false;
+    if (pendingSync) { pendingSync = false; scheduleSync(300); }
+  }
+  return ok;
+}
+
+const dlgCloud = $('#dlg-cloud');
+function openCloud() {
+  $('#c-url').value = cfg ? cfg.url : '';
+  $('#c-key').value = cfg ? cfg.key : '';
+  $('#c-off').classList.toggle('hidden', !cfg);
+  $('#c-now-row').classList.toggle('hidden', !cfg);
+  showCloudStatus();
+  dlgCloud.showModal();
+}
+function showCloudStatus() {
+  const el = $('#cloud-status');
+  el.className = 'small ' + (syncState === 'error' ? 'neg' : syncState === 'ok' ? 'pos' : 'muted');
+  el.textContent = !cfg ? 'Todavía no está conectada. Pegar la URL y la clave que se generan siguiendo LEEME-NUBE.md.'
+    : syncState === 'error' ? 'Problema: ' + syncMsg
+    : syncState === 'ok' ? '✓ Conectada. ' + syncMsg
+    : 'Conectada.';
+}
+$('#sync-btn').addEventListener('click', openCloud);
+$('#c-close').addEventListener('click', () => dlgCloud.close());
+dlgCloud.addEventListener('click', e => { if (e.target === dlgCloud) dlgCloud.close(); });
+$('#c-now').addEventListener('click', async () => { $('#cloud-status').textContent = 'Sincronizando…'; await sync(); showCloudStatus(); });
+$('#c-off').addEventListener('click', () => {
+  if (!confirm('¿Desconectar de la nube? Los datos siguen en este dispositivo y en la planilla, pero ya no se sincronizan.')) return;
+  cfg = null; lastPush = 0; try { localStorage.removeItem(KEY_CLOUD); } catch (e) {}
+  persist(); setSync('off'); dlgCloud.close(); render();
+});
+$('#cloud-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const url = $('#c-url').value.trim(), key = $('#c-key').value.trim();
+  const st = $('#cloud-status');
+  if (!/^https:\/\/script\.google\.com\/.+\/exec$/.test(url)) { st.className = 'small neg'; st.textContent = 'La URL tiene que terminar en /exec y empezar con https://script.google.com/'; return; }
+  if (key.length < 8) { st.className = 'small neg'; st.textContent = 'La clave es muy corta (mínimo 8 caracteres).'; return; }
+  const prev = { cfg, lastPush };
+  cfg = { url, key }; lastPush = 0;
+  st.className = 'small muted'; st.textContent = 'Conectando…';
+  if (await sync()) {
+    try { localStorage.setItem(KEY_CLOUD, JSON.stringify(cfg)); } catch (e) {}
+    dlgCloud.close(); render(); toast('Conectado a Google Sheets ✓');
+  } else {
+    const msg = syncMsg;
+    cfg = prev.cfg; lastPush = prev.lastPush; setSync(cfg ? 'idle' : 'off');
+    st.className = 'small neg'; st.textContent = 'No se pudo conectar: ' + msg;
+  }
+});
+document.addEventListener('visibilitychange', () => { if (!document.hidden) scheduleSync(300); });
+window.addEventListener('online', () => scheduleSync(300));
+setInterval(() => { if (!document.hidden) scheduleSync(0); }, 120000);
+
 /* ============ Eventos ============ */
 const menu = $('#menu'), menuBtn = $('#menu-btn');
 const closeMenu = () => { menu.classList.remove('open'); menuBtn.setAttribute('aria-expanded', 'false'); };
@@ -416,10 +583,11 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closeMenu();
 menu.addEventListener('click', e => {
   const a = e.target.closest('[data-act]'); if (!a) return;
   closeMenu();
-  if (a.dataset.act === 'export-json') download(`tenis-copia-${today()}.json`, JSON.stringify({ app: 'tenis-caja', version: 1, movimientos: movs }, null, 1), 'application/json');
+  if (a.dataset.act === 'cloud') return openCloud();
+  if (a.dataset.act === 'export-json') download(`tenis-copia-${today()}.json`, JSON.stringify({ app: 'tenis-caja', version: 2, movimientos: movs }, null, 1), 'application/json');
   if (a.dataset.act === 'import-json') $('#file').click();
   if (a.dataset.act === 'export-csv') exportCSV();
-  if (a.dataset.act === 'wipe' && confirm('¿Borrar TODOS los movimientos? Esto no se puede deshacer (conviene descargar una copia antes).')) { movs = []; save(); render(); }
+  if (a.dataset.act === 'wipe' && confirm('¿Borrar TODOS los movimientos? Esto no se puede deshacer (conviene descargar una copia antes).')) { replaceAll([]); save(); render(); }
 });
 
 document.querySelector('.tabs').addEventListener('click', e => {
@@ -463,11 +631,13 @@ app.addEventListener('click', e => {
       case 'sum-today': ui.anchor = today(); break;
       case 'sum-prev': shiftAnchor(-1); break;
       case 'sum-next': shiftAnchor(1); break;
-      case 'sample': movs = sampleData(); save(); break;
+      case 'sample': replaceAll(sampleData()); save(); break;
     }
     render();
   }
 });
 
+setSync(syncState);
 render();
+scheduleSync(200);
 })();
