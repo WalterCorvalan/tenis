@@ -75,6 +75,8 @@ const today = () => ymd(new Date());
 
 const nf = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 2 });
 const money = n => (n < 0 ? '−' : '') + '$ ' + nf.format(Math.abs(n));
+/* Monto para mostrar en pantalla: el $ va chico y levantado, pegado al número, y nunca se corta en dos líneas. */
+const mny = (n, plus = false) => `<span class="mny">${n < 0 ? '−' : plus && n > 0 ? '+' : ''}<span class="cur">$</span>${nf.format(Math.abs(n))}</span>`;
 const signed = n => (n > 0 ? '+' : n < 0 ? '−' : '') + '$ ' + nf.format(Math.abs(n));
 function compact(n) {
   const a = Math.abs(n);
@@ -156,9 +158,9 @@ function renderCal() {
         <button class="nav-btn" data-act="next-month" aria-label="Mes siguiente">›</button>
       </div>
       <div class="stats">
-        <div class="stat in"><div class="l">Ingresos del mes</div><div class="v">${money(ms.i)}</div></div>
-        <div class="stat out"><div class="l">Egresos del mes</div><div class="v">${money(ms.o)}</div></div>
-        <div class="stat"><div class="l">Balance</div><div class="v ${ms.bal < 0 ? 'neg' : ''}">${money(ms.bal)}</div></div>
+        <div class="stat in"><div class="l">Ingresos del mes</div><div class="v">${mny(ms.i)}</div></div>
+        <div class="stat out"><div class="l">Egresos del mes</div><div class="v">${mny(ms.o)}</div></div>
+        <div class="stat"><div class="l">Balance</div><div class="v ${ms.bal < 0 ? 'neg' : ''}">${mny(ms.bal)}</div></div>
       </div>
       <div class="wk" aria-hidden="true">${DAYS_SHORT.map(d => `<div>${d}</div>`).join('')}</div>
       <div class="grid">${cells}</div>
@@ -176,16 +178,16 @@ function renderPanel() {
       <span class="ic" aria-hidden="true">${m.type === 'in' ? '↑' : '↓'}</span>
       <span class="t"><b>${esc(m.type === 'in' && m.client ? m.client : m.category)}</b>
         <span>${esc(m.type === 'in' && m.client ? m.category : '')}${m.note ? (m.type === 'in' && m.client ? ' · ' : '') + esc(m.note) : ''}</span></span>
-      <span class="a">${m.type === 'in' ? '+' : '−'}$ ${nf.format(m.amount)}</span>
+      <span class="a">${mny(m.type === 'in' ? m.amount : -m.amount, true)}</span>
     </button>`).join('');
   return `
   <aside class="card pad panel" id="panel" aria-label="Detalle del día">
     <h2>${esc(longDay(ui.sel))}${isToday ? '<span class="badge">hoy</span>' : ''}</h2>
     <div class="sub">${list.length ? `${list.length} movimiento${list.length > 1 ? 's' : ''}` : 'Sin movimientos'}</div>
     <div class="mini">
-      <div><div class="l">Ingresos</div><div class="v pos">${money(t.i)}</div></div>
-      <div><div class="l">Egresos</div><div class="v neg">${money(t.o)}</div></div>
-      <div><div class="l">Balance</div><div class="v ${t.bal < 0 ? 'neg' : ''}">${money(t.bal)}</div></div>
+      <div><div class="l">Ingresos</div><div class="v pos">${mny(t.i)}</div></div>
+      <div><div class="l">Egresos</div><div class="v neg">${mny(t.o)}</div></div>
+      <div class="bal"><div class="l">Balance del día</div><div class="v ${t.bal < 0 ? 'neg' : ''}">${mny(t.bal)}</div></div>
     </div>
     <div class="actions">
       <button class="btn in" data-new="in">↑ Ingreso</button>
@@ -251,7 +253,7 @@ function renderSum() {
   const topMax = Math.max(1, ...ranked.map(r => r.total));
   const rank = ranked.slice(0, 10).map((r, k) => `
     <li><span class="pos-n">${r.none ? '–' : k + 1}</span>
-      <span class="nm ${r.none ? 'muted' : ''}">${esc(r.name)}</span><span class="am">${money(r.total)}</span>
+      <span class="nm ${r.none ? 'muted' : ''}">${esc(r.name)}</span><span class="am">${mny(r.total)}</span>
       <span class="meta"><span class="track"><span class="fill" style="width:${(r.total / topMax * 100).toFixed(1)}%"></span></span>
       <span>${r.n} cobro${r.n > 1 ? 's' : ''} · ${t.i ? Math.round(r.total / t.i * 100) : 0}%</span></span></li>`).join('');
 
@@ -262,7 +264,7 @@ function renderSum() {
   const omax = Math.max(1, ...outs.map(x => x[1]));
   const outHtml = outs.map(([c, v]) => `
     <li><span class="pos-n" style="background:var(--out-bg);color:var(--out)">↓</span>
-      <span class="nm">${esc(c)}</span><span class="am">${money(v)}</span>
+      <span class="nm">${esc(c)}</span><span class="am">${mny(v)}</span>
       <span class="meta"><span class="track"><span class="fill o" style="width:${(v / omax * 100).toFixed(1)}%"></span></span><span>${t.o ? Math.round(v / t.o * 100) : 0}%</span></span></li>`).join('');
 
   const avg = t.ni ? t.i / t.ni : 0;
@@ -278,9 +280,9 @@ function renderSum() {
       <button class="nav-btn" data-act="sum-next" aria-label="Siguiente">›</button>
     </div>
     <div class="cards">
-      <div class="card big in"><div class="l">Ingresos</div><div><div class="v">${money(t.i)}</div><div class="s">${t.ni} cobro${t.ni === 1 ? '' : 's'}${t.ni ? ` · promedio ${money(avg)}` : ''}</div></div></div>
-      <div class="card big out"><div class="l">Egresos</div><div><div class="v">${money(t.o)}</div><div class="s">${t.no} gasto${t.no === 1 ? '' : 's'}</div></div></div>
-      <div class="card big"><div class="l">Balance ${periodName}</div><div><div class="v ${t.bal < 0 ? 'neg' : 'pos'}">${signed(t.bal)}</div><div class="s">${t.i ? `Te queda el ${Math.round(t.bal / t.i * 100)}% de lo que cobraste` : 'Sin ingresos en el período'}</div></div></div>
+      <div class="card big in"><div class="l">Ingresos</div><div><div class="v">${mny(t.i)}</div><div class="s">${t.ni} cobro${t.ni === 1 ? '' : 's'}${t.ni ? ` · promedio ${mny(avg)}` : ''}</div></div></div>
+      <div class="card big out"><div class="l">Egresos</div><div><div class="v">${mny(t.o)}</div><div class="s">${t.no} gasto${t.no === 1 ? '' : 's'}</div></div></div>
+      <div class="card big bal"><div class="l">Balance ${periodName}</div><div><div class="v">${mny(t.bal, true)}</div><div class="s">${t.i ? `Te queda el ${Math.round(t.bal / t.i * 100)}% de lo que cobraste` : 'Sin ingresos en el período'}</div></div></div>
     </div>
     <div class="two">
       <div class="card pad">
