@@ -32,7 +32,9 @@ Se hace **una sola vez** y lleva unos 5 minutos. Al terminar, todo lo que se car
 2. Si todo sale bien aparece “Conectado a Google Sheets ✓” y el botón pasa a verde (**Guardado en la nube**).
 3. Repetir este paso en el celular (misma URL y misma clave). Los datos se juntan solos.
 
-En la planilla se crea sola una hoja llamada **Movimientos** (no cambiarle el nombre ni mover las columnas).
+En la planilla se crea sola una hoja llamada **Movimientos**, con las columnas `id, fecha, hora, tipo, monto (ARS), categoria, cliente, nota, actualizado, eliminado` (no cambiarle el nombre ni mover las columnas).
+
+> Si ya se había probado una versión anterior del script: borrar la hoja *Movimientos* de la planilla, pegar de nuevo el script nuevo y crear una **nueva versión** de la implementación (ver *Seguridad*). Después, en la página, “Sincronizar ahora” vuelve a subir todo.
 
 ## Cómo funciona día a día
 - Cada cambio se guarda primero en el dispositivo (instantáneo) y unos segundos después sube a la planilla.
@@ -40,7 +42,7 @@ En la planilla se crea sola una hoja llamada **Movimientos** (no cambiarle el no
 - Al abrir la página o volver a ella, se baja lo que se cargó en el otro dispositivo (también se revisa cada 2 minutos).
 - Si dos dispositivos cambian el mismo movimiento, gana el cambio más reciente.
 - Los movimientos borrados quedan en la planilla con **SI** en la columna *eliminado* (así el borrado llega al otro dispositivo). Se pueden ocultar con un filtro.
-- Se puede corregir una fila a mano en la planilla: el cambio llega a la página. Mantener el formato de fecha `AAAA-MM-DD` y el tipo `Ingreso` / `Egreso`. Lo más cómodo es editar desde la página.
+- Se puede corregir una fila a mano en la planilla: el cambio llega a la página. Mantener el formato de fecha `AAAA-MM-DD`, la hora como `HH:MM` (por ejemplo `14:33`) y el tipo `Ingreso` / `Egreso`. Lo más cómodo es editar desde la página.
 
 ## Seguridad
 - Cualquiera que tenga **la URL y la clave** podría leer y escribir los datos. No compartirlas ni publicarlas. La URL y la clave **no están en el repositorio**: se escriben en cada dispositivo.

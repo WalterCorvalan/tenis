@@ -12,8 +12,9 @@
 const CLAVE = 'cambiar-esta-clave';
 
 const HOJA = 'Movimientos';
-const COLUMNAS = ['id', 'fecha', 'tipo', 'monto (ARS)', 'categoria', 'cliente', 'nota', 'actualizado', 'eliminado'];
-const COL_ACTUALIZADO = 8; // columna H
+const COLUMNAS = ['id', 'fecha', 'hora', 'tipo', 'monto (ARS)', 'categoria', 'cliente', 'nota', 'actualizado', 'eliminado'];
+const COL_MONTO = 5;        // columna E
+const COL_ACTUALIZADO = 9; // columna I
 
 function hoja_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -25,9 +26,9 @@ function hoja_() {
     sh.getRange(1, 1, 1, COLUMNAS.length).setFontWeight('bold');
     // Texto plano en las columnas de texto: evita que Sheets convierta fechas
     // o interprete como fórmula algo que empiece con "=".
-    ['A', 'B', 'C', 'E', 'F', 'G', 'I'].forEach(c => sh.getRange(c + '2:' + c).setNumberFormat('@'));
-    sh.getRange('D2:D').setNumberFormat('#,##0.00');
-    sh.getRange('H2:H').setNumberFormat('0');
+    ['A', 'B', 'C', 'D', 'F', 'G', 'H', 'J'].forEach(c => sh.getRange(c + '2:' + c).setNumberFormat('@'));
+    sh.getRange('E2:E').setNumberFormat('#,##0.00');
+    sh.getRange('I2:I').setNumberFormat('0');
     sh.setColumnWidth(1, 90);
   }
   return sh;
@@ -45,20 +46,29 @@ function leer_(sh) {
     .map(r => ({
       id: String(r[0]),
       date: String(r[1]),
-      type: String(r[2]).toLowerCase().charAt(0) === 'e' ? 'out' : 'in',
-      amount: Number(r[3]),
-      category: String(r[4]),
-      client: String(r[5]),
-      note: String(r[6]),
-      u: Number(r[7]) || 0,
-      del: String(r[8]).toUpperCase() === 'SI'
+      time: hora_(r[2]),
+      type: String(r[3]).toLowerCase().charAt(0) === 'e' ? 'out' : 'in',
+      amount: Number(r[4]),
+      category: String(r[5]),
+      client: String(r[6]),
+      note: String(r[7]),
+      u: Number(r[8]) || 0,
+      del: String(r[9]).toUpperCase() === 'SI'
     }));
+}
+
+/** Normaliza una hora a "HH:MM" (acepta "6:30", "06:30:00"). Vacío si no hay hora válida. */
+function hora_(v) {
+  const t = /^(\d{1,2}):(\d{2})/.exec(String(v == null ? '' : v).trim());
+  if (!t || Number(t[1]) > 23 || Number(t[2]) > 59) return '';
+  return ('0' + t[1]).slice(-2) + ':' + t[2];
 }
 
 function aFila_(m) {
   return [
     String(m.id),
     String(m.date || ''),
+    hora_(m.time),
     m.type === 'out' ? 'Egreso' : 'Ingreso',
     Number(m.amount) || 0,
     String(m.category || ''),
@@ -131,7 +141,7 @@ function onEdit(e) {
   const desde = Math.max(2, e.range.getRow());
   const hasta = e.range.getRow() + e.range.getNumRows() - 1;
   for (let f = desde; f <= hasta; f++) {
-    if (sh.getRange(f, 1).getValue() === '' && sh.getRange(f, 4).getValue() !== '') {
+    if (sh.getRange(f, 1).getValue() === '' && sh.getRange(f, COL_MONTO).getValue() !== '') {
       sh.getRange(f, 1).setValue(Utilities.getUuid().slice(0, 12));
     }
     sh.getRange(f, COL_ACTUALIZADO).setValue(Date.now());

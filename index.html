@@ -4,17 +4,25 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Tenis · Agenda y caja</title>
-<meta name="description" content="Calendario y contabilidad simple (ingresos y egresos por día) para un entrenador de tenis.">
+<meta name="description" content="Agenda con horarios y contabilidad simple (ingresos y egresos por día) para un entrenador de tenis.">
+<meta name="theme-color" content="#b4502a">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%23d7e84a'/%3E%3Cpath d='M4 8c8 3 8 13 0 16M28 8c-8 3-8 13 0 16' fill='none' stroke='%23fff' stroke-width='2.4'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 
 <header class="top">
+  <svg class="court" viewBox="0 0 600 64" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+    <g fill="none" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke">
+      <rect x="6" y="6" width="588" height="52" vector-effect="non-scaling-stroke"/>
+      <path d="M6 18h588M6 46h588M170 18v28M430 18v28M170 32h260" vector-effect="non-scaling-stroke"/>
+      <path d="M300 6v52" stroke-dasharray="4 5" vector-effect="non-scaling-stroke"/>
+    </g>
+  </svg>
   <div class="top-in">
     <div class="brand">
       <svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="15" fill="#d7e84a"/><path d="M4 8c8 3 8 13 0 16M28 8c-8 3-8 13 0 16" fill="none" stroke="#fff" stroke-width="2.4"/></svg>
-      <div>Agenda y caja<small>Clases de tenis · en pesos (ARS)</small></div>
+      <div><span class="bn">Agenda y caja</span><small>Clases de tenis · pesos (ARS)</small></div>
     </div>
     <nav class="tabs" role="tablist" aria-label="Secciones">
       <button class="tab" role="tab" id="tab-cal" data-view="cal">Calendario</button>
@@ -24,7 +32,7 @@
     <div class="menu-wrap">
       <button class="icon-btn" id="menu-btn" aria-haspopup="true" aria-expanded="false">Copia ⋯</button>
       <div class="menu" id="menu" role="menu">
-        <button role="menuitem" data-act="cloud">☁ Guardar en la nube (Google Sheets)…</button>
+        <button role="menuitem" data-act="cloud">Guardar en la nube (Google Sheets)…</button>
         <hr>
         <button role="menuitem" data-act="export-json">Descargar copia de seguridad</button>
         <button role="menuitem" data-act="import-json">Restaurar copia de seguridad…</button>
@@ -45,8 +53,8 @@
   <form class="form" id="form" method="dialog" autocomplete="off">
     <h2 id="dlg-title">Nuevo movimiento</h2>
     <div class="typeseg" role="radiogroup" aria-label="Tipo de movimiento">
-      <input type="radio" name="type" id="t-in" value="in"><label class="in" for="t-in">↑ Ingreso</label>
-      <input type="radio" name="type" id="t-out" value="out"><label class="out" for="t-out">↓ Egreso</label>
+      <input type="radio" name="type" id="t-in" value="in"><label class="in" for="t-in">+ Ingreso</label>
+      <input type="radio" name="type" id="t-out" value="out"><label class="out" for="t-out">− Egreso</label>
     </div>
     <div class="field">
       <label for="f-amount">Monto</label>
@@ -55,8 +63,10 @@
     </div>
     <div class="row2">
       <div class="field"><label for="f-date">Fecha</label><input id="f-date" type="date" required></div>
-      <div class="field"><label for="f-cat">Categoría</label><select id="f-cat"></select></div>
+      <div class="field"><label for="f-time">Hora</label><input id="f-time" type="time" step="60"></div>
     </div>
+    <div class="chips" id="time-chips" aria-label="Horarios usados antes" style="margin-top:-6px"></div>
+    <div class="field"><label for="f-cat">Categoría</label><select id="f-cat"></select></div>
     <div class="field" id="client-field">
       <label for="f-client">Cliente / alumno</label>
       <input id="f-client" list="clients" placeholder="Ej: Martín Gómez" maxlength="60">
@@ -73,14 +83,14 @@
       <button type="submit" class="btn primary" value="save">Guardar</button>
     </div>
     <div class="form-actions hidden" id="another-row">
-      <button type="submit" class="btn link grow" value="another">Guardar y agregar otro</button>
+      <button type="submit" class="btn link grow" value="another">Guardar y agregar otra clase (1 h después)</button>
     </div>
   </form>
 </dialog>
 
 <dialog id="dlg-cloud" aria-labelledby="cloud-title">
   <form class="form" id="cloud-form" method="dialog" autocomplete="off">
-    <h2 id="cloud-title">☁ Guardar en la nube</h2>
+    <h2 id="cloud-title">Guardar en la nube</h2>
     <p class="small muted" style="margin:0">Los datos se guardan en una planilla de Google Sheets de su cuenta y se comparten entre celular y computadora.</p>
     <p class="small muted" id="cloud-status" style="margin:0"></p>
     <div class="field"><label for="c-url">URL de la aplicación web</label><input id="c-url" type="url" placeholder="https://script.google.com/macros/s/…/exec" spellcheck="false"></div>

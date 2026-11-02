@@ -16,6 +16,7 @@ let movs = [];          // movimientos vigentes
 let tombs = [];         // borrados {id, u}: hacen falta para que el borrado llegue a la nube
 let lastPush = 0;       // hasta cuándo se subieron los cambios locales a la nube
 let cfg = null;         // { url, key } de la nube, si está conectada
+let dataVer = 0;        // sube con cada cambio de datos (invalida el índice por día)
 loadAll();
 
 function loadAll() {
@@ -41,22 +42,26 @@ function persist() {
 function save() { persist(); scheduleSync(); }
 function validMov(m) {
   return m && typeof m.id === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(m.date) &&
-    (m.type === 'in' || m.type === 'out') && Number.isFinite(m.amount) && m.amount > 0;
+    (m.type === 'in' || m.type === 'out') && Number.isFinite(m.amount) && m.amount > 0 &&
+    (m.time == null || m.time === '' || /^([01]\d|2[0-3]):[0-5]\d$/.test(m.time));
 }
 
 /* Alta / edición / baja: cada cambio lleva la hora (u) para resolver conflictos entre dispositivos. */
 function putMov(rec) {
+  dataVer++;
   rec.u = Date.now();
   tombs = tombs.filter(t => t.id !== rec.id);
   const i = movs.findIndex(x => x.id === rec.id);
   if (i >= 0) movs[i] = rec; else movs.push(rec);
 }
 function removeMov(m) {
+  dataVer++;
   movs = movs.filter(x => x.id !== m.id);
   tombs = tombs.filter(t => t.id !== m.id);
   tombs.push({ id: m.id, u: Date.now() });
 }
 function replaceAll(list) {
+  dataVer++;
   const now = Date.now(), keep = new Set(list.map(m => m.id));
   const t = new Map(tombs.map(x => [x.id, x]));
   movs.forEach(m => { if (!keep.has(m.id)) t.set(m.id, { id: m.id, u: now }); });
@@ -97,7 +102,21 @@ function sums(list) {
   return { i, o, bal: i - o, ni, no };
 }
 const inRange = (a, b) => movs.filter(m => m.date >= a && m.date <= b);
-const byDay = date => movs.filter(m => m.date === date);
+let idxVer = -1, idxMap = new Map();
+function dayIndex() {
+  if (idxVer !== dataVer) {
+    idxMap = new Map();
+    for (const m of movs) { let a = idxMap.get(m.date); if (!a) idxMap.set(m.date, a = []); a.push(m); }
+    idxVer = dataVer;
+  }
+  return idxMap;
+}
+const byDay = date => (dayIndex().get(date) || []).slice();
+
+/* Horarios: cualquier minuto (06:30, 07:30, 14:33…). Sin hora = va al final del día. */
+const toMin = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+const addMin = (t, n) => { const x = (((toMin(t) + n) % 1440) + 1440) % 1440; return pad(Math.floor(x / 60)) + ':' + pad(x % 60); };
+const byTime = (a, b) => (a.time ? 0 : 1) - (b.time ? 0 : 1) || (a.time || '').localeCompare(b.time || '') || (a.type === b.type ? 0 : a.type === 'in' ? -1 : 1);
 
 /* ============ Estado de la interfaz ============ */
 const t0 = new Date();
@@ -106,7 +125,8 @@ const ui = {
   y: t0.getFullYear(), m: t0.getMonth(),
   sel: today(),
   period: 'month',
-  anchor: today()
+  anchor: today(),
+  dir: 0
 };
 const $ = s => document.querySelector(s);
 const app = $('#app');
@@ -116,10 +136,25 @@ function render() {
   $('#tab-cal').setAttribute('aria-selected', ui.view === 'cal');
   $('#tab-sum').setAttribute('aria-selected', ui.view === 'sum');
   let html = '';
-  if (memoryOnly) html += `<div class="banner warn">⚠ Este navegador no permite guardar datos (modo privado o bloqueado). Lo que se cargue se perderá al cerrar. Usar “Descargar copia” para no perderlo.</div>`;
-  if (!movs.length) html += `<div class="banner"><span>👋 Todavía no hay movimientos. Tocar un día del calendario para cargar el primero.</span>${cfg ? '' : '<button class="btn" data-act="sample">Probar con datos de ejemplo</button>'}</div>`;
+  if (memoryOnly) html += `<div class="banner warn"><b>Atención:</b> este navegador no permite guardar datos (modo privado o bloqueado). Lo que se cargue se perderá al cerrar. Usar “Descargar copia” para no perderlo.</div>`;
+  if (!movs.length) html += `<div class="banner"><span><b>Todavía no hay movimientos.</b> Tocar un día del calendario para cargar la primera clase.</span>${cfg ? '' : '<button class="btn" data-act="sample">Probar con datos de ejemplo</button>'}</div>`;
   html += ui.view === 'cal' ? renderCal() : renderSum();
   app.innerHTML = html;
+  const g = app.querySelector('.grid');
+  if (g && ui.dir) { g.dataset.dir = ui.dir > 0 ? 'next' : 'prev'; ui.dir = 0; }
+}
+
+/* Cambiar de día sin reconstruir todo el calendario (más rápido y sin saltos). */
+function selectDay(s, focus) {
+  const prev = ui.sel, d = parse(s);
+  ui.sel = s;
+  if (d.getMonth() !== ui.m || d.getFullYear() !== ui.y) { ui.y = d.getFullYear(); ui.m = d.getMonth(); render(); }
+  else {
+    const set = (date, on) => { const b = app.querySelector(`[data-date="${date}"]`); if (b) { b.classList.toggle('sel', on); b.setAttribute('aria-pressed', on); } };
+    set(prev, false); set(s, true);
+    const p = $('#panel'); if (p) p.outerHTML = renderPanel();
+  }
+  if (focus) { const b = app.querySelector(`[data-date="${s}"]`); if (b) b.focus({ preventScroll: true }); }
 }
 
 /* ---------- Calendario ---------- */
@@ -160,7 +195,7 @@ function renderCal() {
       <div class="stats">
         <div class="stat in"><div class="l">Ingresos del mes</div><div class="v">${mny(ms.i)}</div></div>
         <div class="stat out"><div class="l">Egresos del mes</div><div class="v">${mny(ms.o)}</div></div>
-        <div class="stat"><div class="l">Balance</div><div class="v ${ms.bal < 0 ? 'neg' : ''}">${mny(ms.bal)}</div></div>
+        <div class="stat tot"><div class="l">Balance</div><div class="v ${ms.bal < 0 ? 'deficit' : ''}">${mny(ms.bal)}</div></div>
       </div>
       <div class="wk" aria-hidden="true">${DAYS_SHORT.map(d => `<div>${d}</div>`).join('')}</div>
       <div class="grid">${cells}</div>
@@ -170,30 +205,40 @@ function renderCal() {
 }
 
 function renderPanel() {
-  const list = byDay(ui.sel).sort((a, b) => (a.type === b.type ? 0 : a.type === 'in' ? -1 : 1));
+  const list = byDay(ui.sel).sort(byTime);
   const t = sums(list);
+  const d = parse(ui.sel);
   const isToday = ui.sel === today();
   const items = list.map(m => `
-    <button class="mov ${m.type}" data-edit="${m.id}">
-      <span class="ic" aria-hidden="true">${m.type === 'in' ? '↑' : '↓'}</span>
-      <span class="t"><b>${esc(m.type === 'in' && m.client ? m.client : m.category)}</b>
-        <span>${esc(m.type === 'in' && m.client ? m.category : '')}${m.note ? (m.type === 'in' && m.client ? ' · ' : '') + esc(m.note) : ''}</span></span>
-      <span class="a">${mny(m.type === 'in' ? m.amount : -m.amount, true)}</span>
-    </button>`).join('');
+    <li class="tl-item ${m.type}${m.time ? '' : ' notime'}">
+      <span class="tl-t">${m.time ? esc(m.time) : '--:--'}</span>
+      <button class="mov ${m.type}" data-edit="${m.id}">
+        <span class="ic" aria-hidden="true">${m.type === 'in' ? '+' : '−'}</span>
+        <span class="t"><b>${esc(m.type === 'in' && m.client ? m.client : m.category)}</b>
+          <span>${esc(m.type === 'in' && m.client ? m.category : '')}${m.note ? (m.type === 'in' && m.client ? ' · ' : '') + esc(m.note) : ''}</span></span>
+        <span class="a">${mny(m.type === 'in' ? m.amount : -m.amount, true)}</span>
+      </button>
+    </li>`).join('');
+  const n = t.ni;
   return `
-  <aside class="card pad panel" id="panel" aria-label="Detalle del día">
-    <h2>${esc(longDay(ui.sel))}${isToday ? '<span class="badge">hoy</span>' : ''}</h2>
-    <div class="sub">${list.length ? `${list.length} movimiento${list.length > 1 ? 's' : ''}` : 'Sin movimientos'}</div>
-    <div class="mini">
-      <div><div class="l">Ingresos</div><div class="v pos">${mny(t.i)}</div></div>
-      <div><div class="l">Egresos</div><div class="v neg">${mny(t.o)}</div></div>
-      <div class="bal"><div class="l">Balance del día</div><div class="v ${t.bal < 0 ? 'neg' : ''}">${mny(t.bal)}</div></div>
+  <aside class="card panel" id="panel" aria-label="Detalle del día">
+    <div class="dayhead">
+      <div class="dn">${d.getDate()}</div>
+      <div class="dt"><div class="dw">${esc(cap(DAYS_LONG[d.getDay()]))}${isToday ? '<span class="badge">hoy</span>' : ''}</div><div class="dm">${MONTHS[d.getMonth()]} ${d.getFullYear()}</div></div>
     </div>
-    <div class="actions">
-      <button class="btn in" data-new="in">↑ Ingreso</button>
-      <button class="btn out" data-new="out">↓ Egreso</button>
+    <div class="pad">
+      <div class="mini">
+        <div><div class="l">Ingresos${n ? ` · ${n} cobro${n > 1 ? 's' : ''}` : ''}</div><div class="v pos">${mny(t.i)}</div></div>
+        <div><div class="l">Egresos</div><div class="v neg">${mny(t.o)}</div></div>
+        <div class="bal"><div class="l">Balance del día</div><div class="v ${t.bal < 0 ? 'deficit' : ''}">${mny(t.bal)}</div></div>
+      </div>
+      <div class="actions">
+        <button class="btn in" data-new="in">+ Ingreso</button>
+        <button class="btn out" data-new="out">− Egreso</button>
+      </div>
+      <h3 class="agenda-h">Agenda del día</h3>
+      ${list.length ? `<ol class="tl">${items}</ol>` : `<div class="empty">Nada cargado este día.<br>Agregar una clase cobrada o un gasto.</div>`}
     </div>
-    ${list.length ? `<div class="list">${items}</div>` : `<div class="empty">Nada cargado este día.<br>Agregar una clase cobrada o un gasto.</div>`}
   </aside>`;
 }
 
@@ -263,7 +308,7 @@ function renderSum() {
   const outs = [...oc.entries()].sort((a, b) => b[1] - a[1]);
   const omax = Math.max(1, ...outs.map(x => x[1]));
   const outHtml = outs.map(([c, v]) => `
-    <li><span class="pos-n" style="background:var(--out-bg);color:var(--out)">↓</span>
+    <li><span class="pos-n out">−</span>
       <span class="nm">${esc(c)}</span><span class="am">${mny(v)}</span>
       <span class="meta"><span class="track"><span class="fill o" style="width:${(v / omax * 100).toFixed(1)}%"></span></span><span>${t.o ? Math.round(v / t.o * 100) : 0}%</span></span></li>`).join('');
 
@@ -292,7 +337,7 @@ function renderSum() {
         <div class="muted" style="font-size:.8rem;margin-top:8px">Tocar una barra para ver ${ui.period === 'year' ? 'ese mes' : 'ese día'}.</div>
       </div>
       <div style="display:flex;flex-direction:column;gap:16px">
-        <div class="card pad"><h3>🏆 Clientes que más ingresos dejan</h3>
+        <div class="card pad"><h3>Clientes que más ingresos dejan</h3>
           ${ranked.length ? `<ol class="rank">${rank}</ol>` : `<div class="empty">Todavía no hay ingresos en este período.</div>`}
         </div>
         <div class="card pad"><h3>En qué se gasta</h3>
@@ -317,6 +362,13 @@ function refreshChips() {
   const top = [...count.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map(x => x[0]).sort((a, b) => a - b);
   $('#chips').innerHTML = top.map(v => `<button type="button" class="chip" data-amt="${v}">${nf.format(v)}</button>`).join('');
 }
+function refreshTimeChips() {
+  const cnt = new Map();
+  movs.forEach(m => { if (m.time) cnt.set(m.time, (cnt.get(m.time) || 0) + 1); });
+  const top = [...cnt.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(x => x[0]).sort();
+  $('#time-chips').innerHTML = top.map(v => `<button type="button" class="chip" data-time="${v}">${v}</button>`).join('') +
+    `<button type="button" class="chip ghost" data-time="">Sin hora</button>`;
+}
 function applyType() {
   const type = form.type.value;
   const cur = $('#f-cat').value;
@@ -324,7 +376,7 @@ function applyType() {
   $('#client-field').classList.toggle('hidden', type !== 'in');
   refreshChips();
 }
-function openForm({ id, date, type } = {}) {
+function openForm({ id, date, type, time } = {}) {
   editing = id ? movs.find(m => m.id === id) : null;
   const m = editing;
   const ty = m ? m.type : (type || 'in');
@@ -333,6 +385,8 @@ function openForm({ id, date, type } = {}) {
   fillCats(ty, m ? m.category : CATS[ty][0]);
   $('#f-amount').value = m ? m.amount : '';
   $('#f-date').value = m ? m.date : (date || ui.sel);
+  $('#f-time').value = m ? (m.time || '') : (time || '');
+  refreshTimeChips();
   $('#f-client').value = m ? (m.client || '') : '';
   $('#f-note').value = m ? (m.note || '') : '';
   $('#client-field').classList.toggle('hidden', ty !== 'in');
@@ -346,7 +400,11 @@ function openForm({ id, date, type } = {}) {
 form.addEventListener('change', e => { if (e.target.name === 'type') applyType(); });
 $('#chips').addEventListener('click', e => {
   const b = e.target.closest('[data-amt]');
-  if (b) { $('#f-amount').value = b.dataset.amt; $('#f-note').focus(); }
+  if (b) { $('#f-amount').value = b.dataset.amt; (form.type.value === 'in' ? $('#f-client') : $('#f-note')).focus(); }
+});
+$('#time-chips').addEventListener('click', e => {
+  const b = e.target.closest('[data-time]');
+  if (b) $('#f-time').value = b.dataset.time;
 });
 $('#f-cancel').addEventListener('click', () => dlg.close());
 dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
@@ -365,7 +423,7 @@ form.addEventListener('submit', e => {
   const date = $('#f-date').value;
   if (!(amount > 0) || !date) return;
   const rec = {
-    id: editing ? editing.id : uid(), date, type, amount,
+    id: editing ? editing.id : uid(), date, time: $('#f-time').value || '', type, amount,
     category: $('#f-cat').value,
     client: type === 'in' ? $('#f-client').value.trim() : '',
     note: $('#f-note').value.trim()
@@ -376,8 +434,8 @@ form.addEventListener('submit', e => {
   ui.sel = date; ui.y = d.getFullYear(); ui.m = d.getMonth();
   if (another) {
     render();
-    openForm({ date, type });
-    toast('Guardado ✓');
+    openForm({ date, type, time: rec.time ? addMin(rec.time, 60) : '' });   // sugiere la clase siguiente, 1 hora después
+    toast('Guardado');
   } else {
     dlg.close(); render();
   }
@@ -402,8 +460,8 @@ function download(name, text, type) {
 }
 function exportCSV() {
   const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
-  const rows = [['Fecha', 'Tipo', 'Categoría', 'Cliente', 'Nota', 'Monto (ARS)']].concat(
-    [...movs].sort((a, b) => a.date.localeCompare(b.date)).map(m => [m.date, m.type === 'in' ? 'Ingreso' : 'Egreso', m.category, m.client, m.note, String(m.amount).replace('.', ',')]));
+  const rows = [['Fecha', 'Hora', 'Tipo', 'Categoría', 'Cliente', 'Nota', 'Monto (ARS)']].concat(
+    [...movs].sort((a, b) => a.date.localeCompare(b.date) || byTime(a, b)).map(m => [m.date, m.time || '', m.type === 'in' ? 'Ingreso' : 'Egreso', m.category, m.client, m.note, String(m.amount).replace('.', ',')]));
   download(`tenis-movimientos-${today()}.csv`, '﻿' + rows.map(r => r.map(q).join(';')).join('\r\n'), 'text/csv;charset=utf-8');
 }
 $('#file').addEventListener('change', async e => {
@@ -413,7 +471,7 @@ $('#file').addEventListener('change', async e => {
     const data = JSON.parse(await f.text());
     const list = (Array.isArray(data) ? data : data.movimientos).filter(validMov);
     if (!confirm(`Se encontraron ${list.length} movimientos. Esto reemplaza lo que hay cargado ahora (${movs.length}). ¿Continuar?`)) return;
-    replaceAll(list); save(); render(); toast('Copia restaurada ✓');
+    replaceAll(list); save(); render(); toast('Copia restaurada');
   } catch (err) { alert('No se pudo leer el archivo. Tiene que ser una copia descargada desde esta misma aplicación.'); }
 });
 
@@ -429,13 +487,16 @@ function sampleData() {
     if (dow === 0) continue;
     const n = dow === 6 ? 2 : 2 + Math.floor(rnd() * 3);
     let courts = 0;
+    const base = ['06:30', '07:30', '08:30', '09:30', '10:30', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00'];
+    const first = Math.floor(rnd() * (base.length - n));
     for (let k = 0; k < n; k++) {
-      if (rnd() < 0.2) { out.push({ id: uid(), date: s, type: 'in', amount: 30000, category: 'Clase grupal', client: 'Club Los Aromos', note: 'Grupo infantil' }); courts++; continue; }
+      const time = rnd() < 0.1 ? `${pad(8 + Math.floor(rnd() * 11))}:${pad(Math.floor(rnd() * 60))}` : base[first + k];
+      if (rnd() < 0.2) { out.push({ id: uid(), date: s, time, type: 'in', amount: 30000, category: 'Clase grupal', client: 'Club Los Aromos', note: 'Grupo infantil' }); courts++; continue; }
       const c = pick(clients);
-      out.push({ id: uid(), date: s, type: 'in', amount: prices[c], category: 'Clase individual', client: c, note: '1 hora' });
+      out.push({ id: uid(), date: s, time, type: 'in', amount: prices[c], category: 'Clase individual', client: c, note: '1 hora' });
       courts++;
     }
-    if (courts >= 3) out.push({ id: uid(), date: s, type: 'out', amount: 9000, category: 'Alquiler de cancha', client: '', note: '' });
+    if (courts >= 3) out.push({ id: uid(), date: s, time: '', type: 'out', amount: 9000, category: 'Alquiler de cancha', client: '', note: '' });
     if (rnd() < 0.25) out.push({ id: uid(), date: s, type: 'out', amount: 3500, category: 'Transporte', client: '', note: '' });
     if (d.getDate() === 5) out.push({ id: uid(), date: s, type: 'out', amount: 28000, category: 'Pelotas y material', client: '', note: 'Tubos de pelotas' });
   }
@@ -490,11 +551,12 @@ function mergeRemote(remote) {
   movs.forEach(m => local.set(m.id, { u: m.u || 0, rec: m }));
   tombs.forEach(t => local.set(t.id, { u: t.u, del: true }));
   let changed = false;
+  dataVer++;
   for (const r of remote) {
     const l = local.get(r.id);
     if (l && !(r.u > l.u)) continue;
     changed = true;
-    local.set(r.id, r.del ? { u: r.u, del: true } : { u: r.u, rec: { id: r.id, date: r.date, type: r.type, amount: r.amount, category: r.category, client: r.client, note: r.note, u: r.u } });
+    local.set(r.id, r.del ? { u: r.u, del: true } : { u: r.u, rec: { id: r.id, date: r.date, time: r.time || '', type: r.type, amount: r.amount, category: r.category, client: r.client, note: r.note, u: r.u } });
   }
   movs = []; tombs = [];
   for (const [id, l] of local) {
@@ -541,7 +603,7 @@ function showCloudStatus() {
   el.className = 'small ' + (syncState === 'error' ? 'neg' : syncState === 'ok' ? 'pos' : 'muted');
   el.textContent = !cfg ? 'Todavía no está conectada. Pegar la URL y la clave que se generan siguiendo LEEME-NUBE.md.'
     : syncState === 'error' ? 'Problema: ' + syncMsg
-    : syncState === 'ok' ? '✓ Conectada. ' + syncMsg
+    : syncState === 'ok' ? 'Conectada. ' + syncMsg
     : 'Conectada.';
 }
 $('#sync-btn').addEventListener('click', openCloud);
@@ -564,7 +626,7 @@ $('#cloud-form').addEventListener('submit', async e => {
   st.className = 'small muted'; st.textContent = 'Conectando…';
   if (await sync()) {
     try { localStorage.setItem(KEY_CLOUD, JSON.stringify(cfg)); } catch (e) {}
-    dlgCloud.close(); render(); toast('Conectado a Google Sheets ✓');
+    dlgCloud.close(); render(); toast('Conectado a Google Sheets');
   } else {
     const msg = syncMsg;
     cfg = prev.cfg; lastPush = prev.lastPush; setSync(cfg ? 'idle' : 'off');
@@ -611,10 +673,7 @@ app.addEventListener('click', e => {
   if ((el = t.closest('[data-new]'))) return openForm({ type: el.dataset.new, date: ui.sel });
   if ((el = t.closest('[data-edit]'))) return openForm({ id: el.dataset.edit });
   if ((el = t.closest('[data-date]'))) {
-    ui.sel = el.dataset.date;
-    const d = parse(ui.sel);
-    ui.y = d.getFullYear(); ui.m = d.getMonth();
-    render();
+    selectDay(el.dataset.date);
     if (window.matchMedia('(max-width:900px)').matches) $('#panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
     return;
   }
@@ -628,8 +687,8 @@ app.addEventListener('click', e => {
   if ((el = t.closest('[data-act]'))) {
     switch (el.dataset.act) {
       case 'today': ui.y = new Date().getFullYear(); ui.m = new Date().getMonth(); ui.sel = today(); break;
-      case 'prev-month': ui.m--; if (ui.m < 0) { ui.m = 11; ui.y--; } break;
-      case 'next-month': ui.m++; if (ui.m > 11) { ui.m = 0; ui.y++; } break;
+      case 'prev-month': ui.m--; ui.dir = -1; if (ui.m < 0) { ui.m = 11; ui.y--; } break;
+      case 'next-month': ui.m++; ui.dir = 1; if (ui.m > 11) { ui.m = 0; ui.y++; } break;
       case 'sum-today': ui.anchor = today(); break;
       case 'sum-prev': shiftAnchor(-1); break;
       case 'sum-next': shiftAnchor(1); break;
@@ -637,6 +696,15 @@ app.addEventListener('click', e => {
     }
     render();
   }
+});
+
+/* Teclado: flechas para moverse entre días del calendario. */
+app.addEventListener('keydown', e => {
+  const b = e.target.closest && e.target.closest('.day');
+  const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }[e.key];
+  if (!b || !step) return;
+  e.preventDefault();
+  selectDay(ymd(addDays(parse(b.dataset.date), step)), true);
 });
 
 setSync(syncState);
