@@ -21,17 +21,29 @@
   --display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
   --body:"Barlow",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   --r:5px;
+  color-scheme:light;
 }
 @media (prefers-color-scheme:dark){
-  :root{
+  :root:not([data-theme="light"]){
     --bg:#17100c; --surface:#221813; --surface-2:#2b2019; --ink:#f1e8dc; --muted:#ab9c8d; --line:#3d2f26;
     --head:#7a361c; --clay:#d9693b; --on-clay:#1c100a;
     --clay-pale:#33261e; --clay-hover:#3d2e24; --court-line:#5d4a3e;
     --in:#74d49c; --in-bg:#1d3326; --in-solid:#58b982; --on-in:#0d1c13;
     --out:#e6d9c6; --out-bg:#2f241c; --out-solid:#e6d9c6; --on-out:#1d140e;
     --deficit:#ff8a7a;
+    color-scheme:dark;
   }
 }
+:root[data-theme="dark"]{
+    --bg:#17100c; --surface:#221813; --surface-2:#2b2019; --ink:#f1e8dc; --muted:#ab9c8d; --line:#3d2f26;
+    --head:#7a361c; --clay:#d9693b; --on-clay:#1c100a;
+    --clay-pale:#33261e; --clay-hover:#3d2e24; --court-line:#5d4a3e;
+    --in:#74d49c; --in-bg:#1d3326; --in-solid:#58b982; --on-in:#0d1c13;
+    --out:#e6d9c6; --out-bg:#2f241c; --out-solid:#e6d9c6; --on-out:#1d140e;
+    --deficit:#ff8a7a;
+    color-scheme:dark;
+}
+:root[data-theme="light"]{color-scheme:light}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--ink);font:500 16px/1.45 var(--body)}
@@ -48,7 +60,7 @@ h1,h2,h3{font-family:var(--display);text-transform:uppercase;letter-spacing:.03e
 .mny .cur{font-size:.58em;font-weight:700;opacity:.65;margin-right:.14em;vertical-align:.52em;letter-spacing:0}
 
 /* ---------- Encabezado: franja de arcilla con líneas de cancha ---------- */
-header.top{position:sticky;top:0;z-index:20;background:var(--head);color:#fff;overflow:hidden;border-bottom:3px solid rgba(255,255,255,.9)}
+header.top{position:sticky;top:0;z-index:20;background:var(--head);color:#fff;overflow:hidden;border-bottom:3px solid var(--court-line)}
 .court{position:absolute;inset:0;width:100%;height:100%;color:#fff;opacity:.2;pointer-events:none}
 .top-in{position:relative;max-width:1120px;margin:0 auto;padding:10px 16px 0;display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}
 .brand{display:flex;align-items:center;gap:10px;padding-bottom:9px;margin-right:auto}
@@ -67,6 +79,9 @@ header .sync,header .icon-btn{margin-bottom:8px}
 .sync[data-state="syncing"] .dot{background:var(--ball)}
 .icon-btn{border:1.5px solid rgba(255,255,255,.55);background:rgba(0,0,0,.08);color:#fff;border-radius:var(--r);padding:6px 12px;font:700 .95rem var(--display);text-transform:uppercase;letter-spacing:.06em}
 .icon-btn:hover,.sync:hover{background:rgba(0,0,0,.2)}
+.theme-btn{display:grid;place-items:center;width:38px;height:36px;padding:0;margin-bottom:8px;border:1.5px solid rgba(255,255,255,.55);background:rgba(0,0,0,.08);color:#fff;border-radius:var(--r)}
+.theme-btn:hover{background:rgba(0,0,0,.2)}
+.theme-btn svg{width:20px;height:20px}
 header :focus-visible{outline-color:#fff}
 .menu-wrap{position:relative}
 .menu{position:absolute;right:0;top:calc(100% + 2px);background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:var(--r);box-shadow:0 12px 30px rgba(40,20,10,.28);min-width:250px;padding:6px;display:none;z-index:30}
@@ -236,6 +251,9 @@ dialog::backdrop{background:rgba(35,16,8,.6)}
 .mov.pend{border-left-style:dashed;border-left-color:var(--clay);background:color-mix(in srgb,var(--clay-pale) 55%,var(--surface))}
 .mov.pend .a{color:var(--clay)}
 .tl-item.pend::before{background:var(--surface);border-color:var(--clay)}
+.mov .t .trow{display:flex;align-items:center;gap:8px;min-width:0;color:var(--ink);font-size:1rem}
+.mov .t .trow b{min-width:0}
+.mov .t .tag{flex:none;display:inline-block;overflow:visible;white-space:nowrap;color:var(--on-clay);font-size:.7rem;margin:0}
 .cobrar{align-self:flex-start;border:0;background:none;color:var(--clay);font:600 .85rem var(--body);text-decoration:underline;padding:2px 4px}
 .pendnote{grid-column:1 / -1;display:flex;justify-content:space-between;align-items:baseline;background:var(--clay-pale);border-radius:var(--r);padding:7px 12px}
 .pendnote .v{font:700 1.2rem var(--display);color:var(--clay)}
@@ -306,6 +324,8 @@ dialog::backdrop{background:rgba(35,16,8,.6)}
   .sync .lbl{display:none}
   .sync{padding:9px}
   .icon-btn{padding:6px 10px}
+  #menu-btn .lbl{display:none}
+  .theme-btn{width:36px}
   main{padding:14px 12px 100px}
   .toolbar h1{font-size:1.6rem}
   .stats{gap:6px}

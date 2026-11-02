@@ -7,6 +7,7 @@
 <meta name="description" content="Agenda con horarios y contabilidad simple (ingresos y egresos por día) para un entrenador de tenis.">
 <meta name="theme-color" content="#b4502a">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%23d7e84a'/%3E%3Cpath d='M4 8c8 3 8 13 0 16M28 8c-8 3-8 13 0 16' fill='none' stroke='%23fff' stroke-width='2.4'/%3E%3C/svg%3E">
+<script>try{var t=localStorage.getItem('tenis-caja-tema');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -29,10 +30,12 @@
       <button class="tab" role="tab" id="tab-sum" data-view="sum">Resumen</button>
     </nav>
     <button class="sync" id="sync-btn" data-state="off"><span class="dot" aria-hidden="true"></span><span class="lbl">Sin nube</span></button>
+    <button class="theme-btn" id="theme-btn" type="button" aria-label="Cambiar el modo de color" title="Cambiar el modo de color"></button>
     <div class="menu-wrap">
-      <button class="icon-btn" id="menu-btn" aria-haspopup="true" aria-expanded="false">Copia ⋯</button>
+      <button class="icon-btn" id="menu-btn" aria-haspopup="true" aria-expanded="false" aria-label="Copias de seguridad y más opciones"><span class="lbl">Copia </span>⋯</button>
       <div class="menu" id="menu" role="menu">
         <button role="menuitem" data-act="cloud">Guardar en la nube (Google Sheets)…</button>
+        <button role="menuitem" data-act="theme-auto">Modo de color automático (según el celular)</button>
         <hr>
         <button role="menuitem" data-act="export-json">Descargar copia de seguridad</button>
         <button role="menuitem" data-act="import-json">Restaurar copia de seguridad…</button>

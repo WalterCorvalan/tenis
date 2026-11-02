@@ -229,7 +229,7 @@ function renderPanel() {
       <div class="movwrap">
         <button class="mov ${m.type}${m.pending ? ' pend' : ''}" data-edit="${m.id}">
           <span class="ic" aria-hidden="true">${m.type === 'in' ? '+' : '−'}</span>
-          <span class="t"><b>${esc(m.type === 'in' && m.client ? m.client : m.category)}${m.pending ? '<span class="tag">Debe</span>' : ''}</b>
+          <span class="t"><span class="trow"><b>${esc(m.type === 'in' && m.client ? m.client : m.category)}</b>${m.pending ? '<span class="tag">Debe</span>' : ''}</span>
             <span>${esc(m.type === 'in' && m.client ? m.category : '')}${m.note ? (m.type === 'in' && m.client ? ' · ' : '') + esc(m.note) : ''}</span></span>
           <span class="a">${mny(m.type === 'in' ? m.amount : -m.amount, true)}</span>
         </button>
@@ -742,6 +742,30 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) sche
 window.addEventListener('online', () => scheduleSync(300));
 setInterval(() => { if (!document.hidden) scheduleSync(0); }, 120000);
 
+/* ============ Modo claro / oscuro ============ */
+const KEY_THEME = 'tenis-caja-tema';
+const mqDark = window.matchMedia('(prefers-color-scheme: dark)');
+const root = document.documentElement;
+const effectiveTheme = () => root.dataset.theme || (mqDark.matches ? 'dark' : 'light');
+const ICON_SUN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';
+const ICON_MOON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/></svg>';
+function applyTheme() {
+  const t = effectiveTheme(), btn = $('#theme-btn');
+  btn.innerHTML = t === 'dark' ? ICON_SUN : ICON_MOON;      // muestra el modo al que se puede cambiar
+  const label = t === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro';
+  btn.setAttribute('aria-label', label); btn.title = label;
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.content = t === 'dark' ? '#7a361c' : '#b4502a';
+}
+function setTheme(t) {            // t: 'light' | 'dark' | null (automático)
+  if (t) root.dataset.theme = t; else delete root.dataset.theme;
+  try { if (t) localStorage.setItem(KEY_THEME, t); else localStorage.removeItem(KEY_THEME); } catch (e) {}
+  applyTheme();
+}
+$('#theme-btn').addEventListener('click', () => setTheme(effectiveTheme() === 'dark' ? 'light' : 'dark'));
+mqDark.addEventListener('change', applyTheme);
+applyTheme();
+
 /* ============ Eventos ============ */
 const menu = $('#menu'), menuBtn = $('#menu-btn');
 const closeMenu = () => { menu.classList.remove('open'); menuBtn.setAttribute('aria-expanded', 'false'); };
@@ -753,6 +777,7 @@ menu.addEventListener('click', e => {
   const a = e.target.closest('[data-act]'); if (!a) return;
   closeMenu();
   if (a.dataset.act === 'cloud') return openCloud();
+  if (a.dataset.act === 'theme-auto') return setTheme(null);
   if (a.dataset.act === 'export-json') download(`tenis-copia-${today()}.json`, JSON.stringify({ app: 'tenis-caja', version: 2, movimientos: movs }, null, 1), 'application/json');
   if (a.dataset.act === 'import-json') $('#file').click();
   if (a.dataset.act === 'export-csv') exportCSV();

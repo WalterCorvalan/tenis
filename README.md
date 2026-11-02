@@ -11,6 +11,7 @@ Abrir `index.html` en el navegador (doble clic). No necesita instalar nada ni co
 - **Pendiente de cobro**: al cargar una clase se puede tildar “Todavía no me pagó”. No suma a los ingresos hasta marcarla como cobrada; mientras tanto aparece como **Por cobrar** (en el calendario, en la agenda del día y en el Resumen, con el total que debe cada cliente).
 - **Aviso de clases que se pisan**: al cargar una clase avisa si ya hay otra ese día a la misma hora o a menos de 1 hora.
 - **Resumen**: ingresos, egresos y balance por **semana / mes / año**, gráfico día por día, **ranking de clientes que más ingresos dejan**, en qué se gasta y **horarios y días con más clases**.
+- **Modo claro / oscuro**: botón con sol o luna en el encabezado. Recuerda la elección; en el menú “Copia ⋯” se puede volver al modo automático (el del celular).
 - **Copia ⋯**: descargar/restaurar copia de seguridad (JSON), exportar a Excel (CSV) o borrar todo.
 
 ## Dónde se guardan los datos
