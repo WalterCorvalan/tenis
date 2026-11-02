@@ -225,6 +225,43 @@ dialog::backdrop{background:rgba(35,16,8,.6)}
 .form-actions{display:flex;gap:8px;flex-wrap:wrap}
 .form-actions .grow{flex:1}
 
+/* ---------- Por cobrar, avisos, horarios ---------- */
+.check{display:flex;align-items:center;gap:10px;font-weight:600;cursor:pointer;padding:9px 12px;border:1.5px dashed var(--line);border-radius:var(--r)}
+.check input{width:20px;height:20px;accent-color:var(--clay);flex:none}
+.check small{font-weight:500;color:var(--muted)}
+.check:has(input:checked){border-style:solid;border-color:var(--clay);background:var(--clay-pale)}
+.warn-inline{background:var(--clay-pale);border-left:4px solid var(--clay);border-radius:var(--r);padding:8px 12px;font-size:.9rem;font-weight:600}
+.tag{display:inline-block;margin-left:8px;background:var(--clay);color:var(--on-clay);font:800 .7rem var(--display);letter-spacing:.08em;text-transform:uppercase;padding:1px 6px;border-radius:3px;vertical-align:middle}
+.movwrap{display:flex;flex-direction:column;gap:4px;min-width:0}
+.mov.pend{border-left-style:dashed;border-left-color:var(--clay);background:color-mix(in srgb,var(--clay-pale) 55%,var(--surface))}
+.mov.pend .a{color:var(--clay)}
+.tl-item.pend::before{background:var(--surface);border-color:var(--clay)}
+.cobrar{align-self:flex-start;border:0;background:none;color:var(--clay);font:600 .85rem var(--body);text-decoration:underline;padding:2px 4px}
+.pendnote{grid-column:1 / -1;display:flex;justify-content:space-between;align-items:baseline;background:var(--clay-pale);border-radius:var(--r);padding:7px 12px}
+.pendnote .v{font:700 1.2rem var(--display);color:var(--clay)}
+.pendbar{display:flex;justify-content:space-between;align-items:center;gap:8px;background:var(--clay-pale);border-left:5px solid var(--clay);border-radius:var(--r);padding:6px 6px 6px 14px;margin-bottom:12px}
+.pendbar .link{padding:4px 8px}
+.day.has-pend::after{content:"";position:absolute;right:0;bottom:0;border:9px solid transparent;border-right-color:var(--clay);border-bottom-color:var(--clay)}
+.pend-total{display:flex;justify-content:space-between;align-items:baseline;background:var(--clay);color:var(--on-clay);border-radius:var(--r);padding:8px 14px;margin-bottom:10px}
+.pend-total .l{color:inherit;opacity:.9}
+.pend-total .v{font:700 1.8rem/1.1 var(--display)}
+.pend-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.pend-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px;align-items:center;border-bottom:1px solid var(--line);padding-bottom:8px}
+.pend-go{border:0;background:none;text-align:left;padding:0;min-width:0}
+.pend-go .nm{display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pend-go .meta{display:block;font-size:.78rem;color:var(--muted)}
+.pend-row .am{font:700 1.3rem var(--display)}
+.pay-all{padding:5px 10px;font-size:.85rem}
+.insight{margin:0;font-size:.95rem}
+.when{display:flex;align-items:flex-end;gap:4px;height:112px;padding-top:16px;border-bottom:2px solid var(--court-line);box-shadow:0 1px 0 var(--line)}
+.wcol{position:relative;flex:1;min-width:0;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center}
+.wbar{width:100%;max-width:26px;background:var(--in-solid);border-radius:2px 2px 0 0;opacity:.55;min-height:0}
+.wcol.peak .wbar{background:var(--clay);opacity:1}
+.wn{font:700 .8rem var(--display);color:var(--muted);margin-bottom:2px}
+.wcol.peak .wn{color:var(--clay)}
+.wl{position:absolute;top:100%;margin-top:3px;font-size:.68rem;color:var(--muted);white-space:nowrap}
+.when{margin-bottom:22px}
+
 /* ---------- Aviso y botón flotante ---------- */
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:var(--bg);border-radius:var(--r);padding:11px 16px;display:flex;gap:14px;align-items:center;z-index:60;box-shadow:0 10px 30px rgba(0,0,0,.3);font-weight:600}
 .toast button{border:0;background:none;color:var(--ball);font:800 1.05rem var(--display);text-transform:uppercase;letter-spacing:.06em;text-decoration:underline}
@@ -250,8 +287,6 @@ dialog::backdrop{background:rgba(35,16,8,.6)}
   @keyframes toastIn{from{opacity:0;transform:translate(-50%,8px)}}
   .sync[data-state="syncing"] .dot{animation:pulse 1s infinite alternate}
   @keyframes pulse{to{opacity:.25}}
-  #app>*{animation:fadeIn .18s ease-out}
-  @keyframes fadeIn{from{opacity:.4}}
 }
 
 /* ---------- Responsive ---------- */

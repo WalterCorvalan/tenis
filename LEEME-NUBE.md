@@ -32,9 +32,9 @@ Se hace **una sola vez** y lleva unos 5 minutos. Al terminar, todo lo que se car
 2. Si todo sale bien aparece “Conectado a Google Sheets ✓” y el botón pasa a verde (**Guardado en la nube**).
 3. Repetir este paso en el celular (misma URL y misma clave). Los datos se juntan solos.
 
-En la planilla se crea sola una hoja llamada **Movimientos**, con las columnas `id, fecha, hora, tipo, monto (ARS), categoria, cliente, nota, actualizado, eliminado` (no cambiarle el nombre ni mover las columnas).
+En la planilla se crea sola una hoja llamada **Movimientos**, con las columnas `id, fecha, hora, tipo, monto (ARS), categoria, cliente, nota, actualizado, eliminado, pendiente` (no cambiarle el nombre ni mover las columnas).
 
-> Si ya se había probado una versión anterior del script: borrar la hoja *Movimientos* de la planilla, pegar de nuevo el script nuevo y crear una **nueva versión** de la implementación (ver *Seguridad*). Después, en la página, “Sincronizar ahora” vuelve a subir todo.
+> Si ya se había probado una versión anterior del script: pegar de nuevo el script nuevo y crear una **nueva versión** de la implementación (ver *Seguridad*). La hoja existente se actualiza sola (se agrega la columna *pendiente*). Si se había creado con la versión que todavía no tenía la columna *hora*, es más simple borrar la hoja *Movimientos* y dejar que se vuelva a crear: en la página, “Sincronizar ahora” vuelve a subir todo.
 
 ## Cómo funciona día a día
 - Cada cambio se guarda primero en el dispositivo (instantáneo) y unos segundos después sube a la planilla.

@@ -43,7 +43,8 @@ function save() { persist(); scheduleSync(); }
 function validMov(m) {
   return m && typeof m.id === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(m.date) &&
     (m.type === 'in' || m.type === 'out') && Number.isFinite(m.amount) && m.amount > 0 &&
-    (m.time == null || m.time === '' || /^([01]\d|2[0-3]):[0-5]\d$/.test(m.time));
+    (m.time == null || m.time === '' || /^([01]\d|2[0-3]):[0-5]\d$/.test(m.time)) &&
+    (m.pending == null || typeof m.pending === 'boolean');
 }
 
 /* Alta / edición / baja: cada cambio lleva la hora (u) para resolver conflictos entre dispositivos. */
@@ -96,11 +97,16 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
 const longDay = s => { const d = parse(s); return cap(`${DAYS_LONG[d.getDay()]} ${d.getDate()} de ${MONTHS[d.getMonth()]}`); };
 
+/* Ingresos = lo ya cobrado. Lo "pendiente" (clase dada, todavía no pagada) se cuenta aparte como "por cobrar". */
 function sums(list) {
-  let i = 0, o = 0, ni = 0, no = 0;
-  for (const m of list) { if (m.type === 'in') { i += m.amount; ni++; } else { o += m.amount; no++; } }
-  return { i, o, bal: i - o, ni, no };
+  let i = 0, o = 0, ni = 0, no = 0, pend = 0, np = 0;
+  for (const m of list) {
+    if (m.type === 'in') { if (m.pending) { pend += m.amount; np++; } else { i += m.amount; ni++; } }
+    else { o += m.amount; no++; }
+  }
+  return { i, o, bal: i - o, ni, no, pend, np };
 }
+const allPending = () => movs.filter(m => m.type === 'in' && m.pending);
 const inRange = (a, b) => movs.filter(m => m.date >= a && m.date <= b);
 let idxVer = -1, idxMap = new Map();
 function dayIndex() {
@@ -173,13 +179,13 @@ function renderCal() {
   const tdy = today();
   for (let d = gridStart; d <= gridEnd; d = addDays(d, 1)) {
     const s = ymd(d), list = map[s] || [], t = sums(list);
-    const cls = ['day', d.getMonth() !== ui.m && 'other', s === tdy && 'today', s === ui.sel && 'sel'].filter(Boolean).join(' ');
+    const cls = ['day', d.getMonth() !== ui.m && 'other', s === tdy && 'today', s === ui.sel && 'sel', t.np && 'has-pend'].filter(Boolean).join(' ');
     let amts = '';
     if (list.length) {
       amts = `<span class="amts">${t.i ? `<span class="i">+${compact(t.i)}</span>` : ''}${t.o ? `<span class="o">−${compact(t.o)}</span>` : ''}</span>` +
              `<span class="net ${t.bal >= 0 ? 'pos' : 'neg'}">${t.bal < 0 ? '−' : ''}${compact(t.bal)}</span>`;
     }
-    cells += `<button class="${cls}" data-date="${s}" aria-label="${esc(longDay(s))}${list.length ? `, ${list.length} movimientos, balance ${signed(t.bal)}` : ''}" aria-pressed="${s === ui.sel}">
+    cells += `<button class="${cls}" data-date="${s}" aria-label="${esc(longDay(s))}${list.length ? `, ${list.length} movimientos, balance ${signed(t.bal)}` : ''}${t.np ? `, ${t.np} por cobrar` : ''}" aria-pressed="${s === ui.sel}">
       <span class="n">${d.getDate()}</span>${list.length ? `<span class="dots">${list.length}×</span>` : ''}${amts}</button>`;
   }
 
@@ -197,11 +203,19 @@ function renderCal() {
         <div class="stat out"><div class="l">Egresos del mes</div><div class="v">${mny(ms.o)}</div></div>
         <div class="stat tot"><div class="l">Balance</div><div class="v ${ms.bal < 0 ? 'deficit' : ''}">${mny(ms.bal)}</div></div>
       </div>
+      ${pendBar()}
       <div class="wk" aria-hidden="true">${DAYS_SHORT.map(d => `<div>${d}</div>`).join('')}</div>
       <div class="grid">${cells}</div>
     </section>
     ${renderPanel()}
   </div>`;
+}
+
+function pendBar() {
+  const p = allPending();
+  if (!p.length) return '';
+  const tot = p.reduce((a, m) => a + m.amount, 0);
+  return `<div class="pendbar"><span><b>Por cobrar:</b> ${mny(tot)} · ${p.length} clase${p.length > 1 ? 's' : ''}</span><button class="btn link" data-view-go="sum">Ver quién</button></div>`;
 }
 
 function renderPanel() {
@@ -210,14 +224,17 @@ function renderPanel() {
   const d = parse(ui.sel);
   const isToday = ui.sel === today();
   const items = list.map(m => `
-    <li class="tl-item ${m.type}${m.time ? '' : ' notime'}">
+    <li class="tl-item ${m.type}${m.time ? '' : ' notime'}${m.pending ? ' pend' : ''}">
       <span class="tl-t">${m.time ? esc(m.time) : '--:--'}</span>
-      <button class="mov ${m.type}" data-edit="${m.id}">
-        <span class="ic" aria-hidden="true">${m.type === 'in' ? '+' : '−'}</span>
-        <span class="t"><b>${esc(m.type === 'in' && m.client ? m.client : m.category)}</b>
-          <span>${esc(m.type === 'in' && m.client ? m.category : '')}${m.note ? (m.type === 'in' && m.client ? ' · ' : '') + esc(m.note) : ''}</span></span>
-        <span class="a">${mny(m.type === 'in' ? m.amount : -m.amount, true)}</span>
-      </button>
+      <div class="movwrap">
+        <button class="mov ${m.type}${m.pending ? ' pend' : ''}" data-edit="${m.id}">
+          <span class="ic" aria-hidden="true">${m.type === 'in' ? '+' : '−'}</span>
+          <span class="t"><b>${esc(m.type === 'in' && m.client ? m.client : m.category)}${m.pending ? '<span class="tag">Debe</span>' : ''}</b>
+            <span>${esc(m.type === 'in' && m.client ? m.category : '')}${m.note ? (m.type === 'in' && m.client ? ' · ' : '') + esc(m.note) : ''}</span></span>
+          <span class="a">${mny(m.type === 'in' ? m.amount : -m.amount, true)}</span>
+        </button>
+        ${m.pending ? `<button class="cobrar" data-pay="${m.id}">Marcar como cobrado</button>` : ''}
+      </div>
     </li>`).join('');
   const n = t.ni;
   return `
@@ -231,6 +248,7 @@ function renderPanel() {
         <div><div class="l">Ingresos${n ? ` · ${n} cobro${n > 1 ? 's' : ''}` : ''}</div><div class="v pos">${mny(t.i)}</div></div>
         <div><div class="l">Egresos</div><div class="v neg">${mny(t.o)}</div></div>
         <div class="bal"><div class="l">Balance del día</div><div class="v ${t.bal < 0 ? 'deficit' : ''}">${mny(t.bal)}</div></div>
+        ${t.np ? `<div class="pendnote"><span class="l">Por cobrar este día</span><span class="v">${mny(t.pend)}</span></div>` : ''}
       </div>
       <div class="actions">
         <button class="btn in" data-new="in">+ Ingreso</button>
@@ -275,6 +293,7 @@ function renderSum() {
   }
   const idx = Object.fromEntries(buckets.map((b, k) => [b.key, k]));
   for (const m of list) {
+    if (m.pending) continue;
     const b = buckets[idx[ui.period === 'year' ? m.date.slice(0, 7) : m.date]];
     if (b) b[m.type === 'in' ? 'i' : 'o'] += m.amount;
   }
@@ -287,7 +306,7 @@ function renderSum() {
 
   // Ranking de clientes
   const cl = new Map();
-  for (const m of list) if (m.type === 'in') {
+  for (const m of list) if (m.type === 'in' && !m.pending) {
     const name = (m.client || '').trim();
     const k = name.toLowerCase();
     const row = cl.get(k) || { name: name || 'Sin cliente asignado', total: 0, n: 0, none: !name };
@@ -345,7 +364,71 @@ function renderSum() {
         </div>
       </div>
     </div>
+    <div class="two" style="margin-top:16px">
+      ${renderWhen(list)}
+      ${renderPend()}
+    </div>
   </section>`;
+}
+
+/* Horarios y días con más clases (todas las clases del período, cobradas o no). */
+function renderWhen(list) {
+  const classes = list.filter(m => m.type === 'in');
+  const timed = classes.filter(m => m.time);
+  const noTime = classes.length - timed.length;
+  const col = (key, n, sum, label, max, peak) => `<div class="wcol${peak ? ' peak' : ''}" title="${esc(label)}: ${n} clase${n === 1 ? '' : 's'} · ${money(sum)}"><span class="wn">${n || ''}</span><span class="wbar" style="height:${n ? Math.max(4, n / max * 100) : 0}%"></span><span class="wl">${esc(key)}</span></div>`;
+  let body;
+  if (!timed.length) {
+    body = `<div class="empty">Cargar la <b>hora</b> de las clases para ver cuáles son los horarios más ocupados.</div>`;
+  } else {
+    const hours = new Map();
+    timed.forEach(m => { const h = +m.time.slice(0, 2); const r = hours.get(h) || { n: 0, sum: 0 }; r.n++; r.sum += m.amount; hours.set(h, r); });
+    const hs = [...hours.keys()], lo = Math.min(...hs), hi = Math.max(...hs);
+    const hmax = Math.max(...[...hours.values()].map(r => r.n));
+    const peakH = [...hours.entries()].sort((a, b) => b[1].n - a[1].n || b[1].sum - a[1].sum)[0];
+    let hcols = '';
+    for (let h = Math.min(lo, hi - 5); h <= hi; h++) { const r = hours.get(h) || { n: 0, sum: 0 }; hcols += col(pad(h), r.n, r.sum, `${pad(h)}:00 a ${pad(h)}:59`, hmax, h === peakH[0] && r.n); }
+    const wd = Array.from({ length: 7 }, () => ({ n: 0, sum: 0 }));
+    classes.forEach(m => { const k = (parse(m.date).getDay() + 6) % 7; wd[k].n++; wd[k].sum += m.amount; });
+    const wmax = Math.max(1, ...wd.map(r => r.n));
+    const peakW = wd.reduce((b, r, k) => r.n > wd[b].n ? k : b, 0);
+    const names = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo'];
+    body = `
+      <p class="insight">Horario más pedido: <b>${pad(peakH[0])}:00 hs</b> (${peakH[1].n} clase${peakH[1].n > 1 ? 's' : ''}) · Día más fuerte: <b>${names[peakW]}</b> (${wd[peakW].n})</p>
+      <div class="l" style="margin:10px 0 4px">Por hora de inicio</div>
+      <div class="when">${hcols}</div>
+      <div class="l" style="margin:14px 0 4px">Por día de la semana</div>
+      <div class="when">${wd.map((r, k) => col(DAYS_SHORT[k], r.n, r.sum, cap(names[k]), wmax, k === peakW && r.n)).join('')}</div>
+      ${noTime ? `<div class="muted small" style="margin-top:8px">${noTime} clase${noTime > 1 ? 's' : ''} sin hora cargada no entra${noTime > 1 ? 'n' : ''} en el gráfico por hora.</div>` : ''}`;
+  }
+  return `<div class="card pad"><h3>Horarios con más clases</h3>${body}</div>`;
+}
+
+/* Deudas: todas las clases pendientes de cobro, sin importar el período. */
+function renderPend() {
+  const groups = new Map();
+  for (const m of allPending()) {
+    const name = (m.client || '').trim(), k = name.toLowerCase();
+    const g = groups.get(k) || { name: name || 'Sin cliente asignado', total: 0, n: 0, first: m.date, none: !name, key: k };
+    g.total += m.amount; g.n++; if (m.date < g.first) g.first = m.date;
+    groups.set(k, g);
+  }
+  const rows = [...groups.values()].sort((a, b) => a.first.localeCompare(b.first));
+  const total = rows.reduce((a, g) => a + g.total, 0);
+  const fd = d => { const x = parse(d); return `${x.getDate()} ${MONTHS[x.getMonth()].slice(0, 3)}`; };
+  const html = rows.map(g => `
+    <li class="pend-row">
+      <button class="pend-go" data-goto="${g.first}" title="Ver el día más antiguo">
+        <span class="nm ${g.none ? 'muted' : ''}">${esc(g.name)}</span>
+        <span class="meta">${g.n} clase${g.n > 1 ? 's' : ''} · desde el ${fd(g.first)}</span>
+      </button>
+      <span class="am">${mny(g.total)}</span>
+      <button class="btn pay-all" data-payall="${esc(g.key)}">Cobrado</button>
+    </li>`).join('');
+  return `<div class="card pad"><h3>Por cobrar</h3>
+    ${rows.length ? `<div class="pend-total"><span class="l">Te deben en total</span><span class="v">${mny(total)}</span></div><ul class="pend-list">${html}</ul>`
+      : `<div class="empty">No hay clases pendientes de cobro.<br>Al cargar una clase se puede tildar “Todavía no me pagó”.</div>`}
+  </div>`;
 }
 
 /* ============ Formulario ============ */
@@ -369,12 +452,28 @@ function refreshTimeChips() {
   $('#time-chips').innerHTML = top.map(v => `<button type="button" class="chip" data-time="${v}">${v}</button>`).join('') +
     `<button type="button" class="chip ghost" data-time="">Sin hora</button>`;
 }
+/* Aviso (no bloquea): ya hay una clase ese día a la misma hora o muy cerca (una clase dura ~1 h). */
+function conflicts() {
+  const time = $('#f-time').value, date = $('#f-date').value;
+  if (form.type.value !== 'in' || !time || !date) return [];
+  const me = toMin(time);
+  return movs.filter(m => m.type === 'in' && m.time && m.date === date && (!editing || m.id !== editing.id) && Math.abs(toMin(m.time) - me) < 60)
+    .sort((a, b) => a.time.localeCompare(b.time));
+}
+function showConflict() {
+  const c = conflicts(), el = $('#time-warn');
+  el.classList.toggle('hidden', !c.length);
+  if (!c.length) return;
+  const who = m => `${m.time}${m.client ? ' ' + m.client : ''}`;
+  el.textContent = c.length === 1 ? `Ojo: ya hay una clase a las ${who(c[0])}. ¿Se pisan?` : `Ojo: ya hay ${c.length} clases cerca de esa hora (${c.map(who).join(', ')}). ¿Se pisan?`;
+}
 function applyType() {
   const type = form.type.value;
   const cur = $('#f-cat').value;
   fillCats(type, CATS[type].includes(cur) ? cur : CATS[type][0]);
   $('#client-field').classList.toggle('hidden', type !== 'in');
-  refreshChips();
+  $('#pending-field').classList.toggle('hidden', type !== 'in');
+  refreshChips(); showConflict();
 }
 function openForm({ id, date, type, time } = {}) {
   editing = id ? movs.find(m => m.id === id) : null;
@@ -390,10 +489,13 @@ function openForm({ id, date, type, time } = {}) {
   $('#f-client').value = m ? (m.client || '') : '';
   $('#f-note').value = m ? (m.note || '') : '';
   $('#client-field').classList.toggle('hidden', ty !== 'in');
+  $('#pending-field').classList.toggle('hidden', ty !== 'in');
+  $('#f-pending').checked = !!(m && m.pending);
   $('#clients').innerHTML = [...new Set(movs.map(x => x.client).filter(Boolean))].sort().map(c => `<option value="${esc(c)}">`).join('');
   $('#f-del').classList.toggle('hidden', !m);
   $('#another-row').classList.toggle('hidden', !!m);
   refreshChips();
+  showConflict();
   dlg.showModal();
   $('#f-amount').focus();
 }
@@ -404,8 +506,10 @@ $('#chips').addEventListener('click', e => {
 });
 $('#time-chips').addEventListener('click', e => {
   const b = e.target.closest('[data-time]');
-  if (b) $('#f-time').value = b.dataset.time;
+  if (b) { $('#f-time').value = b.dataset.time; showConflict(); }
 });
+$('#f-time').addEventListener('input', showConflict);
+$('#f-date').addEventListener('input', showConflict);
 $('#f-cancel').addEventListener('click', () => dlg.close());
 dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
 $('#f-del').addEventListener('click', () => {
@@ -424,6 +528,7 @@ form.addEventListener('submit', e => {
   if (!(amount > 0) || !date) return;
   const rec = {
     id: editing ? editing.id : uid(), date, time: $('#f-time').value || '', type, amount,
+    pending: type === 'in' && $('#f-pending').checked,
     category: $('#f-cat').value,
     client: type === 'in' ? $('#f-client').value.trim() : '',
     note: $('#f-note').value.trim()
@@ -460,8 +565,8 @@ function download(name, text, type) {
 }
 function exportCSV() {
   const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
-  const rows = [['Fecha', 'Hora', 'Tipo', 'Categoría', 'Cliente', 'Nota', 'Monto (ARS)']].concat(
-    [...movs].sort((a, b) => a.date.localeCompare(b.date) || byTime(a, b)).map(m => [m.date, m.time || '', m.type === 'in' ? 'Ingreso' : 'Egreso', m.category, m.client, m.note, String(m.amount).replace('.', ',')]));
+  const rows = [['Fecha', 'Hora', 'Tipo', 'Categoría', 'Cliente', 'Nota', 'Monto (ARS)', 'Estado']].concat(
+    [...movs].sort((a, b) => a.date.localeCompare(b.date) || byTime(a, b)).map(m => [m.date, m.time || '', m.type === 'in' ? 'Ingreso' : 'Egreso', m.category, m.client, m.note, String(m.amount).replace('.', ','), m.type === 'in' ? (m.pending ? 'Pendiente' : 'Cobrado') : '']));
   download(`tenis-movimientos-${today()}.csv`, '﻿' + rows.map(r => r.map(q).join(';')).join('\r\n'), 'text/csv;charset=utf-8');
 }
 $('#file').addEventListener('change', async e => {
@@ -493,7 +598,7 @@ function sampleData() {
       const time = rnd() < 0.1 ? `${pad(8 + Math.floor(rnd() * 11))}:${pad(Math.floor(rnd() * 60))}` : base[first + k];
       if (rnd() < 0.2) { out.push({ id: uid(), date: s, time, type: 'in', amount: 30000, category: 'Clase grupal', client: 'Club Los Aromos', note: 'Grupo infantil' }); courts++; continue; }
       const c = pick(clients);
-      out.push({ id: uid(), date: s, time, type: 'in', amount: prices[c], category: 'Clase individual', client: c, note: '1 hora' });
+      out.push({ id: uid(), date: s, time, type: 'in', amount: prices[c], category: 'Clase individual', client: c, note: '1 hora', pending: d > addDays(end, -9) && rnd() < 0.3 });
       courts++;
     }
     if (courts >= 3) out.push({ id: uid(), date: s, time: '', type: 'out', amount: 9000, category: 'Alquiler de cancha', client: '', note: '' });
@@ -556,7 +661,7 @@ function mergeRemote(remote) {
     const l = local.get(r.id);
     if (l && !(r.u > l.u)) continue;
     changed = true;
-    local.set(r.id, r.del ? { u: r.u, del: true } : { u: r.u, rec: { id: r.id, date: r.date, time: r.time || '', type: r.type, amount: r.amount, category: r.category, client: r.client, note: r.note, u: r.u } });
+    local.set(r.id, r.del ? { u: r.u, del: true } : { u: r.u, rec: { id: r.id, date: r.date, time: r.time || '', pending: !!r.pending && r.type === 'in', type: r.type, amount: r.amount, category: r.category, client: r.client, note: r.note, u: r.u } });
   }
   movs = []; tombs = [];
   for (const [id, l] of local) {
@@ -672,6 +777,24 @@ app.addEventListener('click', e => {
   let el;
   if ((el = t.closest('[data-new]'))) return openForm({ type: el.dataset.new, date: ui.sel });
   if ((el = t.closest('[data-edit]'))) return openForm({ id: el.dataset.edit });
+  if ((el = t.closest('[data-pay]'))) {
+    const m = movs.find(x => x.id === el.dataset.pay); if (!m) return;
+    const before = { ...m };
+    putMov({ ...m, pending: false }); save(); render();
+    return toast('Marcado como cobrado', 'Deshacer', () => { putMov(before); save(); render(); });
+  }
+  if ((el = t.closest('[data-payall]'))) {
+    const key = el.dataset.payall;
+    const list = allPending().filter(m => (m.client || '').trim().toLowerCase() === key);
+    if (!list.length) return;
+    const tot = list.reduce((a, m) => a + m.amount, 0);
+    if (!confirm(`¿Marcar como cobradas ${list.length} clase${list.length > 1 ? 's' : ''} (${money(tot)})?`)) return;
+    const before = list.map(m => ({ ...m }));
+    list.forEach(m => putMov({ ...m, pending: false })); save(); render();
+    return toast('Marcado como cobrado', 'Deshacer', () => { before.forEach(putMov); save(); render(); });
+  }
+  if ((el = t.closest('[data-goto]'))) { ui.view = 'cal'; selectDay(el.dataset.goto); render(); return window.scrollTo({ top: 0 }); }
+  if ((el = t.closest('[data-view-go]'))) { ui.view = el.dataset.viewGo; render(); return window.scrollTo({ top: 0 }); }
   if ((el = t.closest('[data-date]'))) {
     selectDay(el.dataset.date);
     if (window.matchMedia('(max-width:900px)').matches) $('#panel').scrollIntoView({ behavior: 'smooth', block: 'start' });

@@ -12,7 +12,7 @@
 const CLAVE = 'cambiar-esta-clave';
 
 const HOJA = 'Movimientos';
-const COLUMNAS = ['id', 'fecha', 'hora', 'tipo', 'monto (ARS)', 'categoria', 'cliente', 'nota', 'actualizado', 'eliminado'];
+const COLUMNAS = ['id', 'fecha', 'hora', 'tipo', 'monto (ARS)', 'categoria', 'cliente', 'nota', 'actualizado', 'eliminado', 'pendiente'];
 const COL_MONTO = 5;        // columna E
 const COL_ACTUALIZADO = 9; // columna I
 
@@ -29,7 +29,13 @@ function hoja_() {
     ['A', 'B', 'C', 'D', 'F', 'G', 'H', 'J'].forEach(c => sh.getRange(c + '2:' + c).setNumberFormat('@'));
     sh.getRange('E2:E').setNumberFormat('#,##0.00');
     sh.getRange('I2:I').setNumberFormat('0');
+    sh.getRange('K2:K').setNumberFormat('@');
     sh.setColumnWidth(1, 90);
+  }
+  // Hojas creadas con una versión anterior del script: agrega la columna "pendiente".
+  if (sh.getRange(1, COLUMNAS.length).getValue() === '') {
+    sh.getRange(1, COLUMNAS.length).setValue('pendiente').setFontWeight('bold');
+    sh.getRange(2, COLUMNAS.length, Math.max(1, sh.getMaxRows() - 1), 1).setNumberFormat('@');
   }
   return sh;
 }
@@ -53,7 +59,8 @@ function leer_(sh) {
       client: String(r[6]),
       note: String(r[7]),
       u: Number(r[8]) || 0,
-      del: String(r[9]).toUpperCase() === 'SI'
+      del: String(r[9]).toUpperCase() === 'SI',
+      pending: String(r[10]).toUpperCase() === 'SI'
     }));
 }
 
@@ -75,7 +82,8 @@ function aFila_(m) {
     String(m.client || ''),
     String(m.note || ''),
     Number(m.u) || Date.now(),
-    m.del ? 'SI' : ''
+    m.del ? 'SI' : '',
+    m.pending && m.type !== 'out' ? 'SI' : ''
   ];
 }
 

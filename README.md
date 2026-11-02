@@ -8,7 +8,9 @@ Abrir `index.html` en el navegador (doble clic). No necesita instalar nada ni co
 
 - **Calendario**: cada día muestra lo cobrado (verde) y lo gastado (oscuro). Tocar un día (o moverse con las flechas del teclado) para ver su **agenda con horarios** y cargar un **ingreso** (clase cobrada) o un **egreso** (cancha, pelotas, transporte…).
 - **Horarios**: cada movimiento puede llevar cualquier hora (06:30, 07:30, 14:33…). La agenda del día se ordena sola por horario. Con “Guardar y agregar otra clase” se sugiere la hora siguiente (1 h después).
-- **Resumen**: ingresos, egresos y balance por **semana / mes / año**, gráfico día por día, **ranking de clientes que más ingresos dejan** y en qué se gasta.
+- **Pendiente de cobro**: al cargar una clase se puede tildar “Todavía no me pagó”. No suma a los ingresos hasta marcarla como cobrada; mientras tanto aparece como **Por cobrar** (en el calendario, en la agenda del día y en el Resumen, con el total que debe cada cliente).
+- **Aviso de clases que se pisan**: al cargar una clase avisa si ya hay otra ese día a la misma hora o a menos de 1 hora.
+- **Resumen**: ingresos, egresos y balance por **semana / mes / año**, gráfico día por día, **ranking de clientes que más ingresos dejan**, en qué se gasta y **horarios y días con más clases**.
 - **Copia ⋯**: descargar/restaurar copia de seguridad (JSON), exportar a Excel (CSV) o borrar todo.
 
 ## Dónde se guardan los datos

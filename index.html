@@ -66,12 +66,14 @@
       <div class="field"><label for="f-time">Hora</label><input id="f-time" type="time" step="60"></div>
     </div>
     <div class="chips" id="time-chips" aria-label="Horarios usados antes" style="margin-top:-6px"></div>
+    <div class="warn-inline hidden" id="time-warn" role="status"></div>
     <div class="field"><label for="f-cat">Categoría</label><select id="f-cat"></select></div>
     <div class="field" id="client-field">
       <label for="f-client">Cliente / alumno</label>
       <input id="f-client" list="clients" placeholder="Ej: Martín Gómez" maxlength="60">
       <datalist id="clients"></datalist>
     </div>
+    <label class="check" id="pending-field"><input type="checkbox" id="f-pending"><span>Todavía no me pagó <small>(queda “por cobrar”)</small></span></label>
     <div class="field">
       <label for="f-note">Nota (opcional)</label>
       <input id="f-note" maxlength="120" placeholder="Ej: clase de 1 hora">
