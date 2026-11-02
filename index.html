@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tenis · Agenda y caja</title>
+<meta name="description" content="Calendario y contabilidad simple (ingresos y egresos por día) para un entrenador de tenis.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%23d7e84a'/%3E%3Cpath d='M4 8c8 3 8 13 0 16M28 8c-8 3-8 13 0 16' fill='none' stroke='%23fff' stroke-width='2.4'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="top-in">
+    <div class="brand">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="15" fill="#d7e84a"/><path d="M4 8c8 3 8 13 0 16M28 8c-8 3-8 13 0 16" fill="none" stroke="#fff" stroke-width="2.4"/></svg>
+      <div>Agenda y caja<small>Clases de tenis</small></div>
+    </div>
+    <nav class="tabs" role="tablist" aria-label="Secciones">
+      <button class="tab" role="tab" id="tab-cal" data-view="cal">Calendario</button>
+      <button class="tab" role="tab" id="tab-sum" data-view="sum">Resumen</button>
+    </nav>
+    <div class="menu-wrap">
+      <button class="icon-btn" id="menu-btn" aria-haspopup="true" aria-expanded="false">Copia ⋯</button>
+      <div class="menu" id="menu" role="menu">
+        <button role="menuitem" data-act="export-json">Descargar copia de seguridad</button>
+        <button role="menuitem" data-act="import-json">Restaurar copia de seguridad…</button>
+        <button role="menuitem" data-act="export-csv">Exportar a Excel (CSV)</button>
+        <hr>
+        <button role="menuitem" class="danger" data-act="wipe">Borrar todos los datos</button>
+      </div>
+      <input type="file" id="file" accept="application/json,.json" class="hidden">
+    </div>
+  </div>
+</header>
+
+<main id="app"></main>
+
+<button class="fab" id="fab" aria-label="Agregar movimiento">+</button>
+
+<dialog id="dlg" aria-labelledby="dlg-title">
+  <form class="form" id="form" method="dialog" autocomplete="off">
+    <h2 id="dlg-title">Nuevo movimiento</h2>
+    <div class="typeseg" role="radiogroup" aria-label="Tipo de movimiento">
+      <input type="radio" name="type" id="t-in" value="in"><label class="in" for="t-in">↑ Ingreso</label>
+      <input type="radio" name="type" id="t-out" value="out"><label class="out" for="t-out">↓ Egreso</label>
+    </div>
+    <div class="field">
+      <label for="f-amount">Monto</label>
+      <div class="amount"><span>$</span><input id="f-amount" type="number" inputmode="decimal" step="any" min="0.01" required placeholder="0"></div>
+      <div class="chips" id="chips" aria-label="Montos usados antes"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label for="f-date">Fecha</label><input id="f-date" type="date" required></div>
+      <div class="field"><label for="f-cat">Categoría</label><select id="f-cat"></select></div>
+    </div>
+    <div class="field" id="client-field">
+      <label for="f-client">Cliente / alumno</label>
+      <input id="f-client" list="clients" placeholder="Ej: Martín Gómez" maxlength="60">
+      <datalist id="clients"></datalist>
+    </div>
+    <div class="field">
+      <label for="f-note">Nota (opcional)</label>
+      <input id="f-note" maxlength="120" placeholder="Ej: clase de 1 hora">
+    </div>
+    <div class="form-actions">
+      <button type="button" class="btn out hidden" id="f-del">Eliminar</button>
+      <span class="grow"></span>
+      <button type="button" class="btn" id="f-cancel">Cancelar</button>
+      <button type="submit" class="btn primary" value="save">Guardar</button>
+    </div>
+    <div class="form-actions hidden" id="another-row">
+      <button type="submit" class="btn link grow" value="another">Guardar y agregar otro</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toast-host" aria-live="polite"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
