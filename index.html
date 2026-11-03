@@ -34,6 +34,7 @@
     <div class="menu-wrap">
       <button class="icon-btn" id="menu-btn" aria-haspopup="true" aria-expanded="false" aria-label="Copias de seguridad y más opciones"><span class="lbl">Copia </span>⋯</button>
       <div class="menu" id="menu" role="menu">
+        <button role="menuitem" data-act="goal">Meta mensual…</button>
         <button role="menuitem" data-act="cloud">Guardar en la nube (Google Sheets)…</button>
         <button role="menuitem" data-act="theme-auto">Modo de color automático (según el celular)</button>
         <hr>
@@ -70,25 +71,61 @@
     </div>
     <div class="chips" id="time-chips" aria-label="Horarios usados antes" style="margin-top:-6px"></div>
     <div class="warn-inline hidden" id="time-warn" role="status"></div>
+    <div class="warn-inline info hidden" id="reprog-hint" role="status"></div>
     <div class="field"><label for="f-cat">Categoría</label><select id="f-cat"></select></div>
+    <div class="field hidden" id="pack-field">
+      <label for="f-packsize">Cantidad de clases del pack</label>
+      <input id="f-packsize" type="number" inputmode="numeric" min="1" max="200" step="1" placeholder="Ej: 8">
+      <span class="small muted">El monto de arriba es lo que pagó por todo el pack. Después, cada clase se descuenta del pack.</span>
+    </div>
     <div class="field" id="client-field">
       <label for="f-client">Cliente / alumno</label>
       <input id="f-client" list="clients" placeholder="Ej: Martín Gómez" maxlength="60">
       <datalist id="clients"></datalist>
     </div>
-    <label class="check" id="pending-field"><input type="checkbox" id="f-pending"><span>Todavía no me pagó <small>(queda “por cobrar”)</small></span></label>
+    <label class="check hidden" id="packuse-field"><input type="checkbox" id="f-packuse"><span id="packuse-text">Descontar de su pack</span></label>
+    <div class="field" id="state-field">
+      <label id="state-label">Estado de la clase</label>
+      <div class="stateseg" role="radiogroup" aria-labelledby="state-label">
+        <input type="radio" name="state" id="s-paid" value="paid" checked><label class="paid" for="s-paid">Cobrada</label>
+        <input type="radio" name="state" id="s-pending" value="pending"><label class="pending" for="s-pending">Debe</label>
+        <input type="radio" name="state" id="s-cancel" value="cancel"><label class="cancel" for="s-cancel">Cancelada</label>
+      </div>
+    </div>
+    <div class="field hidden" id="reason-field">
+      <label for="f-reason">Motivo de la cancelación</label>
+      <select id="f-reason"></select>
+    </div>
     <div class="field">
       <label for="f-note">Nota (opcional)</label>
       <input id="f-note" maxlength="120" placeholder="Ej: clase de 1 hora">
     </div>
     <div class="form-actions">
       <button type="button" class="btn out hidden" id="f-del">Eliminar</button>
+      <button type="button" class="btn hidden" id="f-reprog">Reprogramar</button>
       <span class="grow"></span>
       <button type="button" class="btn" id="f-cancel">Cancelar</button>
       <button type="submit" class="btn primary" value="save">Guardar</button>
     </div>
     <div class="form-actions hidden" id="another-row">
       <button type="submit" class="btn link grow" value="another">Guardar y agregar otra clase (1 h después)</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlg-goal" aria-labelledby="goal-title">
+  <form class="form" id="goal-form" method="dialog" autocomplete="off">
+    <h2 id="goal-title">Meta mensual</h2>
+    <p class="small muted" style="margin:0">¿Cuánto querés cobrar por mes? Se muestra el avance en el calendario y en el Resumen.</p>
+    <div class="field">
+      <label for="g-val">Meta de ingresos por mes</label>
+      <div class="amount"><span>$</span><input id="g-val" type="number" inputmode="numeric" step="any" min="1" required placeholder="0"></div>
+    </div>
+    <div class="form-actions">
+      <button type="button" class="btn out hidden" id="g-off">Quitar meta</button>
+      <span class="grow"></span>
+      <button type="button" class="btn" id="g-close">Cancelar</button>
+      <button type="submit" class="btn primary">Guardar</button>
     </div>
   </form>
 </dialog>

@@ -12,31 +12,37 @@
 const CLAVE = 'cambiar-esta-clave';
 
 const HOJA = 'Movimientos';
-const COLUMNAS = ['id', 'fecha', 'hora', 'tipo', 'monto (ARS)', 'categoria', 'cliente', 'nota', 'actualizado', 'eliminado', 'pendiente'];
+const COLUMNAS = ['id', 'fecha', 'hora', 'tipo', 'monto (ARS)', 'categoria', 'cliente', 'nota', 'actualizado', 'eliminado', 'pendiente', 'cancelada', 'motivo', 'pack (clases)', 'pack (id)'];
 const COL_MONTO = 5;        // columna E
 const COL_ACTUALIZADO = 9; // columna I
 
 function hoja_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sh = ss.getSheetByName(HOJA);
+  const nueva = !sh;
   if (!sh) {
     sh = ss.insertSheet(HOJA);
     sh.appendRow(COLUMNAS);
     sh.setFrozenRows(1);
     sh.getRange(1, 1, 1, COLUMNAS.length).setFontWeight('bold');
-    // Texto plano en las columnas de texto: evita que Sheets convierta fechas
-    // o interprete como fórmula algo que empiece con "=".
-    ['A', 'B', 'C', 'D', 'F', 'G', 'H', 'J'].forEach(c => sh.getRange(c + '2:' + c).setNumberFormat('@'));
-    sh.getRange('E2:E').setNumberFormat('#,##0.00');
-    sh.getRange('I2:I').setNumberFormat('0');
-    sh.getRange('K2:K').setNumberFormat('@');
     sh.setColumnWidth(1, 90);
   }
-  // Hojas creadas con una versión anterior del script: agrega la columna "pendiente".
-  if (sh.getRange(1, COLUMNAS.length).getValue() === '') {
-    sh.getRange(1, COLUMNAS.length).setValue('pendiente').setFontWeight('bold');
-    sh.getRange(2, COLUMNAS.length, Math.max(1, sh.getMaxRows() - 1), 1).setNumberFormat('@');
-  }
+  // Formatos: texto plano en las columnas de texto (evita que Sheets convierta fechas
+  // o interprete como fórmula algo que empiece con "="); números en las numéricas.
+  // También agrega las columnas nuevas a hojas creadas con una versión anterior del script.
+  const hdr = sh.getRange(1, 1, 1, COLUMNAS.length).getValues()[0];
+  COLUMNAS.forEach((nombre, i) => {
+    const faltaEncabezado = hdr[i] === '' || hdr[i] == null;
+    if (nueva || faltaEncabezado) {
+      if (faltaEncabezado) {
+        sh.getRange(1, i + 1).setValue(nombre);
+        sh.getRange(1, i + 1).setFontWeight('bold');
+      }
+      const filas = Math.max(1, sh.getMaxRows() - 1);
+      const fmt = i === 4 ? '#,##0.00' : (i === 8 || i === 13) ? '0' : '@';
+      sh.getRange(2, i + 1, filas, 1).setNumberFormat(fmt);
+    }
+  });
   return sh;
 }
 
@@ -60,7 +66,11 @@ function leer_(sh) {
       note: String(r[7]),
       u: Number(r[8]) || 0,
       del: String(r[9]).toUpperCase() === 'SI',
-      pending: String(r[10]).toUpperCase() === 'SI'
+      pending: String(r[10]).toUpperCase() === 'SI',
+      cancelled: String(r[11]).toUpperCase() === 'SI',
+      reason: String(r[12]),
+      packSize: Number(r[13]) || 0,
+      packId: String(r[14])
     }));
 }
 
@@ -83,7 +93,11 @@ function aFila_(m) {
     String(m.note || ''),
     Number(m.u) || Date.now(),
     m.del ? 'SI' : '',
-    m.pending && m.type !== 'out' ? 'SI' : ''
+    m.pending && m.type !== 'out' ? 'SI' : '',
+    m.cancelled && m.type !== 'out' ? 'SI' : '',
+    String(m.reason || ''),
+    Number(m.packSize) || '',
+    String(m.packId || '')
   ];
 }
 

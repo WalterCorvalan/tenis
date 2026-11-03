@@ -4,9 +4,11 @@
 /* ============ Datos ============ */
 const KEY = 'tenis-caja-v2', KEY_OLD = 'tenis-caja-v1', KEY_CLOUD = 'tenis-caja-nube';
 const CATS = {
-  in:  ['Clase individual', 'Clase grupal', 'Torneo / evento', 'Otro ingreso'],
+  in:  ['Clase individual', 'Clase grupal', 'Pack de clases', 'Torneo / evento', 'Otro ingreso'],
   out: ['Alquiler de cancha', 'Pelotas y material', 'Transporte', 'Otro gasto']
 };
+const PACK_CAT = 'Pack de clases';
+const REASONS = ['Lluvia', 'Faltó el alumno', 'Avisó que no viene', 'Reprogramada', 'Otro'];
 const MONTHS = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 const DAYS_LONG = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
 const DAYS_SHORT = ['L','M','M','J','V','S','D'];
@@ -41,10 +43,12 @@ function persist() {
 }
 function save() { persist(); scheduleSync(); }
 function validMov(m) {
-  return m && typeof m.id === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(m.date) &&
-    (m.type === 'in' || m.type === 'out') && Number.isFinite(m.amount) && m.amount > 0 &&
+  if (!m || typeof m.id !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(m.date) || (m.type !== 'in' && m.type !== 'out')) return false;
+  const okAmt = Number.isFinite(m.amount) && (m.amount > 0 || (m.amount === 0 && (m.cancelled || m.packId)));
+  return okAmt &&
     (m.time == null || m.time === '' || /^([01]\d|2[0-3]):[0-5]\d$/.test(m.time)) &&
-    (m.pending == null || typeof m.pending === 'boolean');
+    (m.pending == null || typeof m.pending === 'boolean') &&
+    (m.cancelled == null || typeof m.cancelled === 'boolean');
 }
 
 /* Alta / edición / baja: cada cambio lleva la hora (u) para resolver conflictos entre dispositivos. */
@@ -97,16 +101,74 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
 const longDay = s => { const d = parse(s); return cap(`${DAYS_LONG[d.getDay()]} ${d.getDate()} de ${MONTHS[d.getMonth()]}`); };
 
-/* Ingresos = lo ya cobrado. Lo "pendiente" (clase dada, todavía no pagada) se cuenta aparte como "por cobrar". */
+/* Ingresos = lo ya cobrado. Lo "pendiente" (clase dada, todavía no pagada) se cuenta aparte como "por cobrar".
+   Las clases canceladas no suman nada. Las clases descontadas de un pack no suman: la plata entró cuando se pagó el pack. */
 function sums(list) {
-  let i = 0, o = 0, ni = 0, no = 0, pend = 0, np = 0;
+  let i = 0, o = 0, ni = 0, no = 0, pend = 0, np = 0, nc = 0, lost = 0, npk = 0;
   for (const m of list) {
-    if (m.type === 'in') { if (m.pending) { pend += m.amount; np++; } else { i += m.amount; ni++; } }
-    else { o += m.amount; no++; }
+    if (m.cancelled) { nc++; if (m.reason !== 'Reprogramada') lost += m.amount; continue; }
+    if (m.type === 'in') {
+      if (m.pending) { pend += m.amount; np++; }
+      else if (m.packId) npk++;
+      else { i += m.amount; ni++; }
+    } else { o += m.amount; no++; }
   }
-  return { i, o, bal: i - o, ni, no, pend, np };
+  return { i, o, bal: i - o, ni, no, pend, np, nc, lost, npk };
 }
-const allPending = () => movs.filter(m => m.type === 'in' && m.pending);
+const allPending = () => movs.filter(m => m.type === 'in' && m.pending && !m.cancelled);
+const clientKey = c => (c || '').trim().toLowerCase();
+
+/* Packs: se compra un pack (ingreso con "packSize") y cada clase descontada lleva "packId" y monto 0. */
+let packVer = -1, packMap = new Map();
+function packs() {
+  if (packVer !== dataVer) {
+    packMap = new Map();
+    for (const m of movs) if (m.type === 'in' && m.packSize > 0 && !m.cancelled) packMap.set(m.id, { id: m.id, size: m.packSize, client: (m.client || '').trim(), date: m.date, used: 0, idx: new Map() });
+    const uses = movs.filter(m => m.packId && packMap.has(m.packId) && !m.cancelled).sort((a, b) => a.date.localeCompare(b.date) || (a.time || '').localeCompare(b.time || ''));
+    for (const u of uses) { const p = packMap.get(u.packId); p.used++; p.idx.set(u.id, p.used); }
+    packVer = dataVer;
+  }
+  return packMap;
+}
+const packLeft = p => p.size - p.used;
+function activePacksFor(client, keepId) {
+  const k = clientKey(client);
+  if (!k) return [];
+  return [...packs().values()].filter(p => clientKey(p.client) === k && (packLeft(p) > 0 || p.id === keepId)).sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/* Meta mensual (se guarda en este dispositivo y va en la copia de seguridad). */
+const KEY_GOAL = 'tenis-caja-meta';
+let goal = 0;
+try { goal = Number(localStorage.getItem(KEY_GOAL)) || 0; } catch (e) {}
+function setGoal(v) {
+  goal = v > 0 ? v : 0;
+  try { if (goal) localStorage.setItem(KEY_GOAL, String(goal)); else localStorage.removeItem(KEY_GOAL); } catch (e) {}
+}
+function goalData(y, m) {
+  const list = inRange(ymd(new Date(y, m, 1)), ymd(new Date(y, m + 1, 0)));
+  const t = sums(list);
+  const classes = list.filter(x => x.type === 'in' && !x.pending && !x.cancelled && x.amount > 0 && !(x.packSize > 0));
+  const avg = classes.length ? classes.reduce((a, x) => a + x.amount, 0) / classes.length : 0;
+  const pct = Math.min(100, t.i / goal * 100);
+  const left = Math.max(0, goal - t.i);
+  return { t, pct, pend: Math.min(100 - pct, t.pend / goal * 100), left, need: avg ? Math.ceil(left / avg) : 0, reach: (t.i + t.pend) / goal * 100 };
+}
+function goalBar(g) { return `<div class="gbar" role="img" aria-label="${Math.round(g.pct)}% de la meta cobrado"><span class="gpaid" style="width:${g.pct.toFixed(1)}%"></span><span class="gpend" style="width:${g.pend.toFixed(1)}%"></span></div>`; }
+function goalSlim() {
+  if (!goal) return '';
+  const g = goalData(ui.y, ui.m);
+  return `<div class="goal slim"><div class="goal-line"><span><b>Meta del mes:</b> ${mny(g.t.i)} de ${mny(goal)} · ${Math.round(g.t.i / goal * 100)}%</span><button class="btn link" data-act="goal">Cambiar</button></div>${goalBar(g)}</div>`;
+}
+function goalCard(y, m) {
+  const nm = cap(MONTHS[m]);
+  if (!goal) return `<div class="card pad goal"><div class="goal-line"><div><div class="l">Meta de ${nm}</div><div class="insight">Definí cuánto querés ganar este mes y seguí tu avance día a día.</div></div><button class="btn primary" data-act="goal">Definir meta</button></div></div>`;
+  const g = goalData(y, m);
+  const msg = g.left === 0 ? `Meta cumplida. Superaste por ${mny(g.t.i - goal)}.`
+    : `Te faltan ${mny(g.left)}${g.need ? ` · unas <b>${g.need}</b> clases más` : ''}.${g.t.pend ? ` Si cobrás lo que te deben llegás al <b>${Math.round(g.reach)}%</b>.` : ''}`;
+  return `<div class="card pad goal"><div class="goal-line"><div><div class="l">Meta de ${nm}</div><div class="gv">${mny(g.t.i)} <span class="muted">de</span> ${mny(goal)} <span class="gpct">${Math.round(g.t.i / goal * 100)}%</span></div></div><button class="btn" data-act="goal">Cambiar meta</button></div>${goalBar(g)}<div class="insight">${msg}</div></div>`;
+}
+
 const inRange = (a, b) => movs.filter(m => m.date >= a && m.date <= b);
 let idxVer = -1, idxMap = new Map();
 function dayIndex() {
@@ -178,15 +240,15 @@ function renderCal() {
   let cells = '';
   const tdy = today();
   for (let d = gridStart; d <= gridEnd; d = addDays(d, 1)) {
-    const s = ymd(d), list = map[s] || [], t = sums(list);
+    const s = ymd(d), list = map[s] || [], t = sums(list), nAct = list.filter(x => !x.cancelled).length;
     const cls = ['day', d.getMonth() !== ui.m && 'other', s === tdy && 'today', s === ui.sel && 'sel', t.np && 'has-pend'].filter(Boolean).join(' ');
     let amts = '';
-    if (list.length) {
+    if (nAct) {
       amts = `<span class="amts">${t.i ? `<span class="i">+${compact(t.i)}</span>` : ''}${t.o ? `<span class="o">−${compact(t.o)}</span>` : ''}</span>` +
              `<span class="net ${t.bal >= 0 ? 'pos' : 'neg'}">${t.bal < 0 ? '−' : ''}${compact(t.bal)}</span>`;
     }
-    cells += `<button class="${cls}" data-date="${s}" aria-label="${esc(longDay(s))}${list.length ? `, ${list.length} movimientos, balance ${signed(t.bal)}` : ''}${t.np ? `, ${t.np} por cobrar` : ''}" aria-pressed="${s === ui.sel}">
-      <span class="n">${d.getDate()}</span>${list.length ? `<span class="dots">${list.length}×</span>` : ''}${amts}</button>`;
+    cells += `<button class="${cls}" data-date="${s}" aria-label="${esc(longDay(s))}${nAct ? `, ${nAct} movimientos, balance ${signed(t.bal)}` : ''}${t.np ? `, ${t.np} por cobrar` : ''}${t.nc ? `, ${t.nc} canceladas` : ''}" aria-pressed="${s === ui.sel}">
+      <span class="n">${d.getDate()}</span>${nAct ? `<span class="dots">${nAct}×</span>` : ''}${amts}</button>`;
   }
 
   return `
@@ -204,6 +266,7 @@ function renderCal() {
         <div class="stat tot"><div class="l">Balance</div><div class="v ${ms.bal < 0 ? 'deficit' : ''}">${mny(ms.bal)}</div></div>
       </div>
       ${pendBar()}
+      ${goalSlim()}
       <div class="wk" aria-hidden="true">${DAYS_SHORT.map(d => `<div>${d}</div>`).join('')}</div>
       <div class="grid">${cells}</div>
     </section>
@@ -218,22 +281,32 @@ function pendBar() {
   return `<div class="pendbar"><span><b>Por cobrar:</b> ${mny(tot)} · ${p.length} clase${p.length > 1 ? 's' : ''}</span><button class="btn link" data-view-go="sum">Ver quién</button></div>`;
 }
 
+function tagsFor(m) {
+  const t = [];
+  if (m.cancelled) t.push(`<span class="tag cancel">${esc(m.reason || 'Cancelada')}</span>`);
+  else if (m.pending) t.push('<span class="tag">Debe</span>');
+  if (m.packSize > 0) t.push(`<span class="tag pack">Pack ×${m.packSize}</span>`);
+  else if (m.packId) { const p = packs().get(m.packId), n = p && p.idx.get(m.id); t.push(`<span class="tag pack">${n ? `Pack ${n}/${p.size}` : 'Pack'}</span>`); }
+  return t.join('');
+}
+const amtHtml = m => m.packId ? '<span class="packlbl">incluida</span>' : (m.cancelled && !m.amount ? '—' : mny(m.type === 'in' ? m.amount : -m.amount, m.type === 'in'));
+
 function renderPanel() {
   const list = byDay(ui.sel).sort(byTime);
   const t = sums(list);
   const d = parse(ui.sel);
   const isToday = ui.sel === today();
   const items = list.map(m => `
-    <li class="tl-item ${m.type}${m.time ? '' : ' notime'}${m.pending ? ' pend' : ''}">
+    <li class="tl-item ${m.type}${m.time ? '' : ' notime'}${m.pending ? ' pend' : ''}${m.cancelled ? ' cancel' : ''}">
       <span class="tl-t">${m.time ? esc(m.time) : '--:--'}</span>
       <div class="movwrap">
-        <button class="mov ${m.type}${m.pending ? ' pend' : ''}" data-edit="${m.id}">
-          <span class="ic" aria-hidden="true">${m.type === 'in' ? '+' : '−'}</span>
-          <span class="t"><span class="trow"><b>${esc(m.type === 'in' && m.client ? m.client : m.category)}</b>${m.pending ? '<span class="tag">Debe</span>' : ''}</span>
+        <button class="mov ${m.type}${m.pending ? ' pend' : ''}${m.cancelled ? ' cancel' : ''}" data-edit="${m.id}">
+          <span class="ic" aria-hidden="true">${m.cancelled ? '×' : m.type === 'in' ? '+' : '−'}</span>
+          <span class="t"><span class="trow"><b>${esc(m.type === 'in' && m.client ? m.client : m.category)}</b>${tagsFor(m)}</span>
             <span>${esc(m.type === 'in' && m.client ? m.category : '')}${m.note ? (m.type === 'in' && m.client ? ' · ' : '') + esc(m.note) : ''}</span></span>
-          <span class="a">${mny(m.type === 'in' ? m.amount : -m.amount, true)}</span>
+          <span class="a">${amtHtml(m)}</span>
         </button>
-        ${m.pending ? `<button class="cobrar" data-pay="${m.id}">Marcar como cobrado</button>` : ''}
+        ${m.pending && !m.cancelled ? `<button class="cobrar" data-pay="${m.id}">Marcar como cobrado</button>` : ''}
       </div>
     </li>`).join('');
   const n = t.ni;
@@ -248,6 +321,7 @@ function renderPanel() {
         <div><div class="l">Ingresos${n ? ` · ${n} cobro${n > 1 ? 's' : ''}` : ''}</div><div class="v pos">${mny(t.i)}</div></div>
         <div><div class="l">Egresos</div><div class="v neg">${mny(t.o)}</div></div>
         <div class="bal"><div class="l">Balance del día</div><div class="v ${t.bal < 0 ? 'deficit' : ''}">${mny(t.bal)}</div></div>
+        ${t.nc ? `<div class="pendnote cancelnote"><span class="l">Clases canceladas</span><span class="v">${t.nc}</span></div>` : ''}
         ${t.np ? `<div class="pendnote"><span class="l">Por cobrar este día</span><span class="v">${mny(t.pend)}</span></div>` : ''}
       </div>
       <div class="actions">
@@ -293,7 +367,7 @@ function renderSum() {
   }
   const idx = Object.fromEntries(buckets.map((b, k) => [b.key, k]));
   for (const m of list) {
-    if (m.pending) continue;
+    if (m.pending || m.cancelled) continue;
     const b = buckets[idx[ui.period === 'year' ? m.date.slice(0, 7) : m.date]];
     if (b) b[m.type === 'in' ? 'i' : 'o'] += m.amount;
   }
@@ -306,7 +380,7 @@ function renderSum() {
 
   // Ranking de clientes
   const cl = new Map();
-  for (const m of list) if (m.type === 'in' && !m.pending) {
+  for (const m of list) if (m.type === 'in' && !m.pending && !m.cancelled && !m.packId) {
     const name = (m.client || '').trim();
     const k = name.toLowerCase();
     const row = cl.get(k) || { name: name || 'Sin cliente asignado', total: 0, n: 0, none: !name };
@@ -348,6 +422,8 @@ function renderSum() {
       <div class="card big out"><div class="l">Egresos</div><div><div class="v">${mny(t.o)}</div><div class="s">${t.no} gasto${t.no === 1 ? '' : 's'}</div></div></div>
       <div class="card big bal"><div class="l">Balance ${periodName}</div><div><div class="v">${mny(t.bal, true)}</div><div class="s">${t.i ? `Te queda el ${Math.round(t.bal / t.i * 100)}% de lo que cobraste` : 'Sin ingresos en el período'}</div></div></div>
     </div>
+    ${ui.period === 'month' ? goalCard(s.getFullYear(), s.getMonth()) : ''}
+    ${cancelBar(t, list)}
     <div class="two">
       <div class="card pad">
         <h3>${ui.period === 'year' ? 'Mes por mes' : 'Día por día'}</h3>
@@ -366,14 +442,14 @@ function renderSum() {
     </div>
     <div class="two" style="margin-top:16px">
       ${renderWhen(list)}
-      ${renderPend()}
+      <div class="stack">${renderPend()}${renderPacks()}</div>
     </div>
   </section>`;
 }
 
 /* Horarios y días con más clases (todas las clases del período, cobradas o no). */
 function renderWhen(list) {
-  const classes = list.filter(m => m.type === 'in');
+  const classes = list.filter(m => m.type === 'in' && !m.cancelled && !(m.packSize > 0));
   const timed = classes.filter(m => m.time);
   const noTime = classes.length - timed.length;
   const col = (key, n, sum, label, max, peak) => `<div class="wcol${peak ? ' peak' : ''}" title="${esc(label)}: ${n} clase${n === 1 ? '' : 's'} · ${money(sum)}"><span class="wn">${n || ''}</span><span class="wbar" style="height:${n ? Math.max(4, n / max * 100) : 0}%"></span><span class="wl">${esc(key)}</span></div>`;
@@ -402,6 +478,26 @@ function renderWhen(list) {
       ${noTime ? `<div class="muted small" style="margin-top:8px">${noTime} clase${noTime > 1 ? 's' : ''} sin hora cargada no entra${noTime > 1 ? 'n' : ''} en el gráfico por hora.</div>` : ''}`;
   }
   return `<div class="card pad"><h3>Horarios con más clases</h3>${body}</div>`;
+}
+
+/* Canceladas del período, con el motivo, y cuánta plata no se cobró por eso. */
+function cancelBar(t, list) {
+  if (!t.nc) return '';
+  const by = new Map();
+  list.filter(m => m.cancelled).forEach(m => by.set(m.reason || 'Cancelada', (by.get(m.reason || 'Cancelada') || 0) + 1));
+  const parts = [...by.entries()].sort((a, b) => b[1] - a[1]).map(([r, n]) => `${esc(r)} ${n}`).join(' · ');
+  return `<div class="cancelbar"><span><b>${t.nc} clase${t.nc > 1 ? 's' : ''} cancelada${t.nc > 1 ? 's' : ''}</b> (${parts})${t.lost ? ` · ${mny(t.lost)} que no se cobraron` : ''}</span></div>`;
+}
+
+/* Packs con clases por usar, de todos los clientes. */
+function renderPacks() {
+  const act = [...packs().values()].filter(p => packLeft(p) > 0).sort((a, b) => packLeft(a) - packLeft(b));
+  const rows = act.map(p => `
+    <li class="pack-row">
+      <div class="pk-top"><span class="nm">${esc(p.client || 'Sin cliente')}</span><span class="pk-n">${packLeft(p) <= 1 ? '<span class="tag">Renovar</span>' : ''} <b>${packLeft(p)}</b> de ${p.size}</span></div>
+      <div class="track"><span class="fill" style="width:${(p.used / p.size * 100).toFixed(0)}%"></span></div>
+    </li>`).join('');
+  return `<div class="card pad"><h3>Packs con clases por usar</h3>${rows ? `<ul class="pack-list">${rows}</ul>` : `<div class="empty">Ningún pack activo.<br>Se carga como ingreso, categoría “Pack de clases”.</div>`}</div>`;
 }
 
 /* Deudas: todas las clases pendientes de cobro, sin importar el período. */
@@ -433,7 +529,7 @@ function renderPend() {
 
 /* ============ Formulario ============ */
 const dlg = $('#dlg'), form = $('#form');
-let editing = null;
+let editing = null, reprog = null;
 
 function fillCats(type, selected) {
   $('#f-cat').innerHTML = CATS[type].map(c => `<option${c === selected ? ' selected' : ''}>${esc(c)}</option>`).join('');
@@ -441,7 +537,7 @@ function fillCats(type, selected) {
 function refreshChips() {
   const type = form.type.value;
   const count = new Map();
-  movs.filter(m => m.type === type).forEach(m => count.set(m.amount, (count.get(m.amount) || 0) + 1));
+  movs.filter(m => m.type === type && m.amount > 0 && !(m.packSize > 0)).forEach(m => count.set(m.amount, (count.get(m.amount) || 0) + 1));
   const top = [...count.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map(x => x[0]).sort((a, b) => a - b);
   $('#chips').innerHTML = top.map(v => `<button type="button" class="chip" data-amt="${v}">${nf.format(v)}</button>`).join('');
 }
@@ -452,12 +548,12 @@ function refreshTimeChips() {
   $('#time-chips').innerHTML = top.map(v => `<button type="button" class="chip" data-time="${v}">${v}</button>`).join('') +
     `<button type="button" class="chip ghost" data-time="">Sin hora</button>`;
 }
-/* Aviso (no bloquea): ya hay una clase ese día a la misma hora o muy cerca (una clase dura ~1 h). */
+/* Aviso (no bloquea): ya hay una clase ese día a la misma hora o muy cerca (una clase dura ~1 h). Las canceladas no cuentan. */
 function conflicts() {
   const time = $('#f-time').value, date = $('#f-date').value;
-  if (form.type.value !== 'in' || !time || !date) return [];
-  const me = toMin(time);
-  return movs.filter(m => m.type === 'in' && m.time && m.date === date && (!editing || m.id !== editing.id) && Math.abs(toMin(m.time) - me) < 60)
+  if (form.type.value !== 'in' || form.state.value === 'cancel' || !time || !date) return [];
+  const me = toMin(time), skip = reprog ? reprog.id : editing && editing.id;
+  return movs.filter(m => m.type === 'in' && m.time && !m.cancelled && !(m.packSize > 0) && m.date === date && m.id !== skip && Math.abs(toMin(m.time) - me) < 60)
     .sort((a, b) => a.time.localeCompare(b.time));
 }
 function showConflict() {
@@ -467,39 +563,67 @@ function showConflict() {
   const who = m => `${m.time}${m.client ? ' ' + m.client : ''}`;
   el.textContent = c.length === 1 ? `Ojo: ya hay una clase a las ${who(c[0])}. ¿Se pisan?` : `Ojo: ya hay ${c.length} clases cerca de esa hora (${c.map(who).join(', ')}). ¿Se pisan?`;
 }
-function applyType() {
-  const type = form.type.value;
-  const cur = $('#f-cat').value;
-  fillCats(type, CATS[type].includes(cur) ? cur : CATS[type][0]);
-  $('#client-field').classList.toggle('hidden', type !== 'in');
-  $('#pending-field').classList.toggle('hidden', type !== 'in');
-  refreshChips(); showConflict();
+/* Muestra u oculta cada campo según el tipo, la categoría, el estado y si el alumno tiene un pack. */
+function syncFormUI() {
+  const isIn = form.type.value === 'in';
+  const cat = $('#f-cat').value, packBuy = isIn && cat === PACK_CAT;
+  $('#client-field').classList.toggle('hidden', !isIn);
+  $('#state-field').classList.toggle('hidden', !isIn);
+  $('#pack-field').classList.toggle('hidden', !packBuy);
+  $('#f-packsize').required = packBuy;
+  const cand = isIn && !packBuy ? activePacksFor($('#f-client').value, editing && editing.packId) : [];
+  const pk = cand[0], row = $('#packuse-field');
+  const wasHidden = row.classList.contains('hidden');
+  row.classList.toggle('hidden', !pk);
+  if (pk) {
+    $('#packuse-text').innerHTML = `Descontar de su pack <small>(quedan ${packLeft(pk)} de ${pk.size})</small>`;
+    if (wasHidden && !editing && !reprog) $('#f-packuse').checked = true;     // si tiene pack, lo normal es descontar
+  } else $('#f-packuse').checked = false;
+  const using = !!pk && $('#f-packuse').checked;
+  form.dataset.packId = using ? pk.id : '';
+  if (using && form.state.value === 'pending') $('#s-paid').checked = true;
+  $('#s-pending').disabled = using;
+  const cancel = isIn && form.state.value === 'cancel';
+  $('#reason-field').classList.toggle('hidden', !cancel);
+  const amt = $('#f-amount');
+  amt.required = !(using || cancel);
+  amt.disabled = using;
+  if (using) amt.value = '';
+  showConflict();
 }
 function openForm({ id, date, type, time } = {}) {
   editing = id ? movs.find(m => m.id === id) : null;
+  reprog = null;
   const m = editing;
   const ty = m ? m.type : (type || 'in');
   $('#dlg-title').textContent = m ? 'Editar movimiento' : 'Nuevo movimiento';
   form.type.value = ty;
   fillCats(ty, m ? m.category : CATS[ty][0]);
-  $('#f-amount').value = m ? m.amount : '';
+  $('#f-amount').value = m && m.amount ? m.amount : '';
   $('#f-date').value = m ? m.date : (date || ui.sel);
   $('#f-time').value = m ? (m.time || '') : (time || '');
   refreshTimeChips();
   $('#f-client').value = m ? (m.client || '') : '';
   $('#f-note').value = m ? (m.note || '') : '';
-  $('#client-field').classList.toggle('hidden', ty !== 'in');
-  $('#pending-field').classList.toggle('hidden', ty !== 'in');
-  $('#f-pending').checked = !!(m && m.pending);
+  $('#f-packsize').value = m && m.packSize ? m.packSize : '';
+  $('#f-packuse').checked = !!(m && m.packId);
+  (m && m.cancelled ? $('#s-cancel') : m && m.pending ? $('#s-pending') : $('#s-paid')).checked = true;
+  $('#f-reason').innerHTML = REASONS.map(r => `<option${m && m.reason === r ? ' selected' : ''}>${r}</option>`).join('');
   $('#clients').innerHTML = [...new Set(movs.map(x => x.client).filter(Boolean))].sort().map(c => `<option value="${esc(c)}">`).join('');
   $('#f-del').classList.toggle('hidden', !m);
+  $('#f-reprog').classList.toggle('hidden', !(m && m.type === 'in' && !m.cancelled && !(m.packSize > 0)));
+  $('#reprog-hint').classList.add('hidden');
   $('#another-row').classList.toggle('hidden', !!m);
   refreshChips();
-  showConflict();
+  syncFormUI();
   dlg.showModal();
-  $('#f-amount').focus();
+  (ty === 'in' && !(m && m.cancelled) ? $('#f-amount') : $('#f-note')).focus();
 }
-form.addEventListener('change', e => { if (e.target.name === 'type') applyType(); });
+form.addEventListener('change', e => {
+  if (e.target.name === 'type') { const cur = $('#f-cat').value; fillCats(form.type.value, CATS[form.type.value].includes(cur) ? cur : CATS[form.type.value][0]); refreshChips(); }
+  if (e.target.name === 'type' || e.target.name === 'state' || e.target.id === 'f-cat' || e.target.id === 'f-packuse') syncFormUI();
+});
+$('#f-client').addEventListener('input', syncFormUI);
 $('#chips').addEventListener('click', e => {
   const b = e.target.closest('[data-amt]');
   if (b) { $('#f-amount').value = b.dataset.amt; (form.type.value === 'in' ? $('#f-client') : $('#f-note')).focus(); }
@@ -519,32 +643,69 @@ $('#f-del').addEventListener('click', () => {
   save(); dlg.close(); render();
   toast('Movimiento eliminado', 'Deshacer', () => { putMov(removed); save(); render(); });
 });
+/* Reprogramar: la clase original queda como cancelada ("Reprogramada") y se crea la nueva en la fecha y hora elegidas. */
+$('#f-reprog').addEventListener('click', () => {
+  if (!editing) return;
+  reprog = editing;
+  $('#dlg-title').textContent = 'Reprogramar clase';
+  const h = $('#reprog-hint');
+  h.textContent = `La clase del ${longDay(editing.date)}${editing.time ? ' a las ' + editing.time : ''} queda como cancelada (reprogramada). Elegí la nueva fecha y hora.`;
+  h.classList.remove('hidden');
+  $('#f-del').classList.add('hidden'); $('#f-reprog').classList.add('hidden');
+  $('#f-date').focus();
+  showConflict();
+});
 form.addEventListener('submit', e => {
   e.preventDefault();
   const another = e.submitter && e.submitter.value === 'another';
-  const type = form.type.value;
-  const amount = Math.round(parseFloat($('#f-amount').value) * 100) / 100;
-  const date = $('#f-date').value;
-  if (!(amount > 0) || !date) return;
+  const type = form.type.value, isIn = type === 'in';
+  const state = isIn ? form.state.value : 'paid';
+  const cancel = state === 'cancel';
+  const category = $('#f-cat').value;
+  const packBuy = isIn && category === PACK_CAT;
+  const packId = form.dataset.packId || '';
+  const date = $('#f-date').value, time = $('#f-time').value || '';
+  let amount = packId ? 0 : Math.round((parseFloat($('#f-amount').value) || 0) * 100) / 100;
+  if (!date || (!packId && !cancel && !(amount > 0))) return;
+  const size = packBuy ? parseInt($('#f-packsize').value, 10) : 0;
+  if (packBuy && !(size > 0)) return;
+  if (reprog && date === reprog.date && time === (reprog.time || '')) {
+    const w = $('#time-warn'); w.textContent = 'Para reprogramar, elegí otra fecha u otra hora.'; w.classList.remove('hidden'); return;
+  }
   const rec = {
-    id: editing ? editing.id : uid(), date, time: $('#f-time').value || '', type, amount,
-    pending: type === 'in' && $('#f-pending').checked,
-    category: $('#f-cat').value,
-    client: type === 'in' ? $('#f-client').value.trim() : '',
-    note: $('#f-note').value.trim()
+    id: editing && !reprog ? editing.id : uid(), date, time, type, amount,
+    pending: isIn && state === 'pending', cancelled: isIn && cancel, reason: cancel ? $('#f-reason').value : '',
+    packSize: size || 0, packId,
+    category, client: isIn ? $('#f-client').value.trim() : '', note: $('#f-note').value.trim()
   };
+  if (reprog) putMov({ ...reprog, cancelled: true, reason: 'Reprogramada', pending: false });
   putMov(rec);
   save();
   const d = parse(date);
   ui.sel = date; ui.y = d.getFullYear(); ui.m = d.getMonth();
+  const wasReprog = !!reprog; reprog = null;
   if (another) {
     render();
     openForm({ date, type, time: rec.time ? addMin(rec.time, 60) : '' });   // sugiere la clase siguiente, 1 hora después
     toast('Guardado');
   } else {
     dlg.close(); render();
+    if (wasReprog) toast('Clase reprogramada');
   }
 });
+
+/* ============ Meta mensual ============ */
+const dlgGoal = $('#dlg-goal');
+function openGoal() {
+  $('#g-val').value = goal || '';
+  $('#g-off').classList.toggle('hidden', !goal);
+  dlgGoal.showModal();
+  $('#g-val').focus();
+}
+$('#goal-form').addEventListener('submit', e => { e.preventDefault(); setGoal(parseFloat($('#g-val').value) || 0); dlgGoal.close(); render(); toast(goal ? 'Meta guardada' : 'Meta quitada'); });
+$('#g-off').addEventListener('click', () => { setGoal(0); dlgGoal.close(); render(); toast('Meta quitada'); });
+$('#g-close').addEventListener('click', () => dlgGoal.close());
+dlgGoal.addEventListener('click', e => { if (e.target === dlgGoal) dlgGoal.close(); });
 
 /* ============ Aviso con "deshacer" ============ */
 let toastTimer;
@@ -565,8 +726,8 @@ function download(name, text, type) {
 }
 function exportCSV() {
   const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
-  const rows = [['Fecha', 'Hora', 'Tipo', 'Categoría', 'Cliente', 'Nota', 'Monto (ARS)', 'Estado']].concat(
-    [...movs].sort((a, b) => a.date.localeCompare(b.date) || byTime(a, b)).map(m => [m.date, m.time || '', m.type === 'in' ? 'Ingreso' : 'Egreso', m.category, m.client, m.note, String(m.amount).replace('.', ','), m.type === 'in' ? (m.pending ? 'Pendiente' : 'Cobrado') : '']));
+  const rows = [['Fecha', 'Hora', 'Tipo', 'Categoría', 'Cliente', 'Nota', 'Monto (ARS)', 'Estado', 'Motivo']].concat(
+    [...movs].sort((a, b) => a.date.localeCompare(b.date) || byTime(a, b)).map(m => [m.date, m.time || '', m.type === 'in' ? 'Ingreso' : 'Egreso', m.category, m.client, m.note, String(m.amount).replace('.', ','), m.type === 'in' ? (m.cancelled ? 'Cancelada' : m.pending ? 'Pendiente' : m.packId ? 'De pack' : 'Cobrado') : '', m.reason || '']));
   download(`tenis-movimientos-${today()}.csv`, '﻿' + rows.map(r => r.map(q).join(';')).join('\r\n'), 'text/csv;charset=utf-8');
 }
 $('#file').addEventListener('change', async e => {
@@ -576,7 +737,7 @@ $('#file').addEventListener('change', async e => {
     const data = JSON.parse(await f.text());
     const list = (Array.isArray(data) ? data : data.movimientos).filter(validMov);
     if (!confirm(`Se encontraron ${list.length} movimientos. Esto reemplaza lo que hay cargado ahora (${movs.length}). ¿Continuar?`)) return;
-    replaceAll(list); save(); render(); toast('Copia restaurada');
+    replaceAll(list); if (data && data.meta > 0) setGoal(data.meta); save(); render(); toast('Copia restaurada');
   } catch (err) { alert('No se pudo leer el archivo. Tiene que ser una copia descargada desde esta misma aplicación.'); }
 });
 
@@ -598,13 +759,19 @@ function sampleData() {
       const time = rnd() < 0.1 ? `${pad(8 + Math.floor(rnd() * 11))}:${pad(Math.floor(rnd() * 60))}` : base[first + k];
       if (rnd() < 0.2) { out.push({ id: uid(), date: s, time, type: 'in', amount: 30000, category: 'Clase grupal', client: 'Club Los Aromos', note: 'Grupo infantil' }); courts++; continue; }
       const c = pick(clients);
-      out.push({ id: uid(), date: s, time, type: 'in', amount: prices[c], category: 'Clase individual', client: c, note: '1 hora', pending: d > addDays(end, -9) && rnd() < 0.3 });
+      const cx = rnd() < 0.06;
+      out.push({ id: uid(), date: s, time, type: 'in', amount: prices[c], category: 'Clase individual', client: c, note: '1 hora', pending: !cx && d > addDays(end, -9) && rnd() < 0.3, cancelled: cx, reason: cx ? pick(['Lluvia', 'Faltó el alumno']) : '' });
       courts++;
     }
     if (courts >= 3) out.push({ id: uid(), date: s, time: '', type: 'out', amount: 9000, category: 'Alquiler de cancha', client: '', note: '' });
     if (rnd() < 0.25) out.push({ id: uid(), date: s, type: 'out', amount: 3500, category: 'Transporte', client: '', note: '' });
     if (d.getDate() === 5) out.push({ id: uid(), date: s, type: 'out', amount: 28000, category: 'Pelotas y material', client: '', note: 'Tubos de pelotas' });
   }
+  // Un pack de 8 clases pagado por adelantado (usadas 5)
+  const packId = uid(), bought = addDays(end, -22);
+  out.push({ id: packId, date: ymd(bought), time: '', type: 'in', amount: 100000, category: 'Pack de clases', client: 'Sofía Benítez', note: '8 clases', packSize: 8 });
+  [['-19', '17:30'], ['-16', '18:30'], ['-12', '17:30'], ['-8', '19:00'], ['-4', '18:30']].forEach(([off, time]) =>
+    out.push({ id: uid(), date: ymd(addDays(end, +off)), time, type: 'in', amount: 0, category: 'Clase individual', client: 'Sofía Benítez', note: '1 hora', packId }));
   return out;
 }
 
@@ -661,7 +828,7 @@ function mergeRemote(remote) {
     const l = local.get(r.id);
     if (l && !(r.u > l.u)) continue;
     changed = true;
-    local.set(r.id, r.del ? { u: r.u, del: true } : { u: r.u, rec: { id: r.id, date: r.date, time: r.time || '', pending: !!r.pending && r.type === 'in', type: r.type, amount: r.amount, category: r.category, client: r.client, note: r.note, u: r.u } });
+    local.set(r.id, r.del ? { u: r.u, del: true } : { u: r.u, rec: { id: r.id, date: r.date, time: r.time || '', pending: !!r.pending && r.type === 'in', cancelled: !!r.cancelled && r.type === 'in', reason: r.reason || '', packSize: r.packSize || 0, packId: r.packId || '', type: r.type, amount: r.amount, category: r.category, client: r.client, note: r.note, u: r.u } });
   }
   movs = []; tombs = [];
   for (const [id, l] of local) {
@@ -777,8 +944,9 @@ menu.addEventListener('click', e => {
   const a = e.target.closest('[data-act]'); if (!a) return;
   closeMenu();
   if (a.dataset.act === 'cloud') return openCloud();
+  if (a.dataset.act === 'goal') return openGoal();
   if (a.dataset.act === 'theme-auto') return setTheme(null);
-  if (a.dataset.act === 'export-json') download(`tenis-copia-${today()}.json`, JSON.stringify({ app: 'tenis-caja', version: 2, movimientos: movs }, null, 1), 'application/json');
+  if (a.dataset.act === 'export-json') download(`tenis-copia-${today()}.json`, JSON.stringify({ app: 'tenis-caja', version: 2, meta: goal, movimientos: movs }, null, 1), 'application/json');
   if (a.dataset.act === 'import-json') $('#file').click();
   if (a.dataset.act === 'export-csv') exportCSV();
   if (a.dataset.act === 'wipe' && confirm('¿Borrar TODOS los movimientos? Esto no se puede deshacer (conviene descargar una copia antes).')) { replaceAll([]); save(); render(); }
@@ -801,6 +969,7 @@ app.addEventListener('click', e => {
   const t = e.target;
   let el;
   if ((el = t.closest('[data-new]'))) return openForm({ type: el.dataset.new, date: ui.sel });
+  if ((el = t.closest('[data-act="goal"]'))) return openGoal();
   if ((el = t.closest('[data-edit]'))) return openForm({ id: el.dataset.edit });
   if ((el = t.closest('[data-pay]'))) {
     const m = movs.find(x => x.id === el.dataset.pay); if (!m) return;
@@ -840,7 +1009,7 @@ app.addEventListener('click', e => {
       case 'sum-today': ui.anchor = today(); break;
       case 'sum-prev': shiftAnchor(-1); break;
       case 'sum-next': shiftAnchor(1); break;
-      case 'sample': replaceAll(sampleData()); save(); break;
+      case 'sample': replaceAll(sampleData()); if (!goal) setGoal(1500000); save(); break;
     }
     render();
   }
