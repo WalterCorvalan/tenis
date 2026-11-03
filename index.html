@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
 <title>Tenis · Agenda y caja</title>
 <meta name="description" content="Agenda con horarios y contabilidad simple (ingresos y egresos por día) para un entrenador de tenis.">
 <meta name="theme-color" content="#b4502a">
@@ -62,6 +62,7 @@ if(/^https?:$/.test(location.protocol)){['barlow-condensed-latin-700','barlow-la
 
 <dialog id="dlg" aria-labelledby="dlg-title">
   <form class="form" id="form" method="dialog" autocomplete="off">
+    <div class="sheet-grab" aria-hidden="true"></div>
     <h2 id="dlg-title">Nuevo movimiento</h2>
     <div class="typeseg" role="radiogroup" aria-label="Tipo de movimiento">
       <input type="radio" name="type" id="t-in" value="in"><label class="in" for="t-in">+ Ingreso</label>
@@ -122,6 +123,7 @@ if(/^https?:$/.test(location.protocol)){['barlow-condensed-latin-700','barlow-la
 
 <dialog id="dlg-goal" aria-labelledby="goal-title">
   <form class="form" id="goal-form" method="dialog" autocomplete="off">
+    <div class="sheet-grab" aria-hidden="true"></div>
     <h2 id="goal-title">Meta mensual</h2>
     <p class="small muted" style="margin:0">¿Cuánto querés cobrar por mes? Se muestra el avance en el calendario y en el Resumen.</p>
     <div class="field">
@@ -139,6 +141,7 @@ if(/^https?:$/.test(location.protocol)){['barlow-condensed-latin-700','barlow-la
 
 <dialog id="dlg-cloud" aria-labelledby="cloud-title">
   <form class="form" id="cloud-form" method="dialog" autocomplete="off">
+    <div class="sheet-grab" aria-hidden="true"></div>
     <h2 id="cloud-title">Guardar en la nube</h2>
     <p class="small muted" style="margin:0">Los datos se guardan en una planilla de Google Sheets de su cuenta y se comparten entre celular y computadora.</p>
     <p class="small muted" id="cloud-status" style="margin:0"></p>

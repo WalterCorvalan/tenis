@@ -543,6 +543,38 @@ function renderPend() {
   </div>`;
 }
 
+/* ============ Ventanas como hoja inferior (celular) ============
+   En pantallas chicas, las ventanas suben desde abajo, como en Android, y se cierran bajándolas con el dedo. */
+function openDlg(d) { d.classList.remove('closing'); d.style.transform = ''; d.style.transition = ''; d.showModal(); }
+const reduceMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+function closeAnim(d) {
+  if (!d.open) return;
+  if (!isMobile() || reduceMotion()) { d.close(); return; }
+  if (d.classList.contains('closing')) return;
+  d.classList.add('closing');
+  let done = false;
+  const end = () => { if (done) return; done = true; d.classList.remove('closing'); d.style.transform = ''; d.style.transition = ''; if (d.open) d.close(); };
+  d.addEventListener('animationend', end, { once: true });
+  setTimeout(end, 300);
+}
+document.querySelectorAll('dialog').forEach(d => {
+  // Esc (o el gesto "atrás") también cierra con la animación
+  d.addEventListener('cancel', e => { if (isMobile() && !reduceMotion()) { e.preventDefault(); closeAnim(d); } });
+  // Arrastrar la manija hacia abajo para cerrar
+  const g = d.querySelector('.sheet-grab'); if (!g) return;
+  let y0 = null, dy = 0;
+  g.addEventListener('pointerdown', e => { if (!isMobile()) return; y0 = e.clientY; dy = 0; g.setPointerCapture(e.pointerId); d.style.transition = 'none'; });
+  g.addEventListener('pointermove', e => { if (y0 === null) return; dy = Math.max(0, e.clientY - y0); d.style.transform = `translateY(${dy}px)`; });
+  const release = () => {
+    if (y0 === null) return;
+    y0 = null; d.style.transition = 'transform .18s ease-out';
+    if (dy > 90) closeAnim(d); else d.style.transform = '';
+  };
+  g.addEventListener('pointerup', release); g.addEventListener('pointercancel', release);
+});
+/* En el celular se enfoca el campo cuando la hoja ya terminó de subir (así el teclado no compite con la animación). */
+const focusSoon = el => { if (isMobile()) setTimeout(() => el.focus({ preventScroll: true }), 260); else el.focus(); };
+
 /* ============ Formulario ============ */
 const dlg = $('#dlg'), form = $('#form');
 let editing = null, reprog = null;
@@ -633,8 +665,8 @@ function openForm({ id, date, type, time } = {}) {
   $('#another-row').classList.toggle('hidden', !!m);
   refreshChips();
   syncFormUI();
-  dlg.showModal();
-  (ty === 'in' && !(m && m.cancelled) ? $('#f-amount') : $('#f-note')).focus();
+  openDlg(dlg);
+  focusSoon(ty === 'in' && !(m && m.cancelled) ? $('#f-amount') : $('#f-note'));
 }
 form.addEventListener('change', e => {
   if (e.target.name === 'type') { const cur = $('#f-cat').value; fillCats(form.type.value, CATS[form.type.value].includes(cur) ? cur : CATS[form.type.value][0]); refreshChips(); }
@@ -651,13 +683,13 @@ $('#time-chips').addEventListener('click', e => {
 });
 $('#f-time').addEventListener('input', showConflict);
 $('#f-date').addEventListener('input', showConflict);
-$('#f-cancel').addEventListener('click', () => dlg.close());
-dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
+$('#f-cancel').addEventListener('click', () => closeAnim(dlg));
+dlg.addEventListener('click', e => { if (e.target === dlg) closeAnim(dlg); });
 $('#f-del').addEventListener('click', () => {
   if (!editing) return;
   const removed = editing;
   removeMov(removed);
-  save(); dlg.close(); render();
+  save(); closeAnim(dlg); render();
   toast('Movimiento eliminado', 'Deshacer', () => { putMov(removed); save(); render(); });
 });
 /* Reprogramar: la clase original queda como cancelada ("Reprogramada") y se crea la nueva en la fecha y hora elegidas. */
@@ -706,7 +738,7 @@ form.addEventListener('submit', e => {
     openForm({ date, type, time: rec.time ? addMin(rec.time, 60) : '' });   // sugiere la clase siguiente, 1 hora después
     toast('Guardado');
   } else {
-    dlg.close(); render();
+    closeAnim(dlg); render();
     toast(wasReprog ? 'Clase reprogramada' : 'Guardado');
   }
 });
@@ -716,13 +748,13 @@ const dlgGoal = $('#dlg-goal');
 function openGoal() {
   $('#g-val').value = goal || '';
   $('#g-off').classList.toggle('hidden', !goal);
-  dlgGoal.showModal();
+  openDlg(dlgGoal);
   $('#g-val').focus();
 }
-$('#goal-form').addEventListener('submit', e => { e.preventDefault(); setGoal(parseFloat($('#g-val').value) || 0); dlgGoal.close(); render(); toast(goal ? 'Meta guardada' : 'Meta quitada'); });
-$('#g-off').addEventListener('click', () => { setGoal(0); dlgGoal.close(); render(); toast('Meta quitada'); });
-$('#g-close').addEventListener('click', () => dlgGoal.close());
-dlgGoal.addEventListener('click', e => { if (e.target === dlgGoal) dlgGoal.close(); });
+$('#goal-form').addEventListener('submit', e => { e.preventDefault(); setGoal(parseFloat($('#g-val').value) || 0); closeAnim(dlgGoal); render(); toast(goal ? 'Meta guardada' : 'Meta quitada'); });
+$('#g-off').addEventListener('click', () => { setGoal(0); closeAnim(dlgGoal); render(); toast('Meta quitada'); });
+$('#g-close').addEventListener('click', () => closeAnim(dlgGoal));
+dlgGoal.addEventListener('click', e => { if (e.target === dlgGoal) closeAnim(dlgGoal); });
 
 /* ============ Aviso con "deshacer" ============ */
 let toastTimer;
@@ -892,7 +924,7 @@ function openCloud() {
   $('#c-now-row').classList.toggle('hidden', !cfg);
   showCode();
   showCloudStatus();
-  dlgCloud.showModal();
+  openDlg(dlgCloud);
 }
 function showCode() {
   $('#c-code-row').classList.toggle('hidden', !cfg);
@@ -908,8 +940,8 @@ function showCloudStatus() {
     : 'Conectada.';
 }
 $('#sync-btn').addEventListener('click', openCloud);
-$('#c-close').addEventListener('click', () => dlgCloud.close());
-dlgCloud.addEventListener('click', e => { if (e.target === dlgCloud) dlgCloud.close(); });
+$('#c-close').addEventListener('click', () => closeAnim(dlgCloud));
+dlgCloud.addEventListener('click', e => { if (e.target === dlgCloud) closeAnim(dlgCloud); });
 $('#c-now').addEventListener('click', async () => { $('#cloud-status').textContent = 'Sincronizando…'; await sync(true); showCloudStatus(); });
 $('#c-copy').addEventListener('click', async () => {
   const el = $('#c-code');
@@ -919,7 +951,7 @@ $('#c-copy').addEventListener('click', async () => {
 $('#c-off').addEventListener('click', () => {
   if (!confirm('¿Desconectar de la nube? Los datos siguen en este dispositivo y en la planilla, pero ya no se sincronizan.\n\nPara volver a conectar vas a necesitar el código (se ve en esta misma ventana: copialo antes).')) return;
   cfg = null; lastPush = 0; lastPull = 0; lastFull = 0; try { localStorage.removeItem(KEY_CLOUD); } catch (e) {}
-  persist(); setSync('off'); dlgCloud.close(); render();
+  persist(); setSync('off'); closeAnim(dlgCloud); render();
 });
 $('#cloud-form').addEventListener('submit', async e => {
   e.preventDefault();
@@ -938,7 +970,7 @@ $('#cloud-form').addEventListener('submit', async e => {
   if (justPaired) { try { localStorage.setItem(KEY_CLOUD, JSON.stringify(cfg)); } catch (e2) {} }   // la clave ya no se puede volver a pedir: guardarla enseguida
   if (await sync()) {
     try { localStorage.setItem(KEY_CLOUD, JSON.stringify(cfg)); } catch (e2) {}
-    showCode(); dlgCloud.close(); render(); toast('Conectado a Google Sheets');
+    showCode(); closeAnim(dlgCloud); render(); toast('Conectado a Google Sheets');
   } else if (justPaired) {
     showCode(); showCloudStatus(); render();       // vinculada; la sincronización se reintenta sola
   } else {

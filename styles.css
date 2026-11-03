@@ -215,6 +215,7 @@ main{max-width:1120px;margin:0 auto;padding:18px 16px 100px}
 /* ---------- Formularios ---------- */
 dialog{border:0;padding:0;border-radius:8px;background:var(--surface);color:var(--ink);width:min(450px,calc(100vw - 24px));max-height:calc(100dvh - 24px);box-shadow:0 24px 70px rgba(30,12,4,.45)}
 dialog::backdrop{background:rgba(35,16,8,.6)}
+.sheet-grab{display:none}
 .form{padding:20px;display:flex;flex-direction:column;gap:14px}
 .form h2{margin:0;font-size:1.7rem;font-weight:800;line-height:1}
 .typeseg{display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -344,6 +345,20 @@ dialog::backdrop{background:rgba(35,16,8,.6)}
 }
 
 /* ---------- Responsive ---------- */
+/* Ventanas (formulario, meta, nube): en el celular son hojas que suben desde abajo. */
+@media (max-width:900px){
+  dialog{width:100%;max-width:none;max-height:92dvh;margin:auto 0 0;border-radius:18px 18px 0 0;box-shadow:0 -14px 50px rgba(30,12,4,.4)}
+  .form{padding-top:4px;padding-bottom:calc(20px + env(safe-area-inset-bottom))}
+  .sheet-grab{display:block;position:relative;height:26px;margin:0 -20px;touch-action:none;cursor:grab}
+  .sheet-grab::before{content:"";position:absolute;left:50%;top:9px;width:44px;height:5px;margin-left:-22px;border-radius:3px;background:var(--line)}
+}
+@media (max-width:900px) and (prefers-reduced-motion:no-preference){
+  dialog[open]{animation:sheetUp .26s cubic-bezier(.2,.8,.2,1)}
+  dialog.closing{animation:sheetDown .2s ease-in forwards}
+  @keyframes sheetUp{from{transform:translateY(100%)}}
+  @keyframes sheetDown{to{transform:translateY(100%)}}
+}
+
 @media (max-width:900px){
   .layout{grid-template-columns:1fr}
   .two{grid-template-columns:1fr}
