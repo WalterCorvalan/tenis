@@ -64,6 +64,8 @@ if(/^https?:$/.test(location.protocol)){['barlow-condensed-latin-700','barlow-la
   <form class="form" id="form" method="dialog" autocomplete="off">
     <div class="sheet-grab" aria-hidden="true"></div>
     <h2 id="dlg-title">Nuevo movimiento</h2>
+    <div class="fcols">
+    <div class="fcol">
     <div class="typeseg" role="radiogroup" aria-label="Tipo de movimiento">
       <input type="radio" name="type" id="t-in" value="in"><label class="in" for="t-in">+ Ingreso</label>
       <input type="radio" name="type" id="t-out" value="out"><label class="out" for="t-out">− Egreso</label>
@@ -80,6 +82,8 @@ if(/^https?:$/.test(location.protocol)){['barlow-condensed-latin-700','barlow-la
     <div class="chips" id="time-chips" aria-label="Horarios usados antes" style="margin-top:-6px"></div>
     <div class="warn-inline hidden" id="time-warn" role="status"></div>
     <div class="warn-inline info hidden" id="reprog-hint" role="status"></div>
+    </div>
+    <div class="fcol">
     <div class="field"><label for="f-cat">Categoría</label><select id="f-cat"></select></div>
     <div class="field hidden" id="pack-field">
       <label for="f-packsize">Cantidad de clases del pack</label>
@@ -107,6 +111,8 @@ if(/^https?:$/.test(location.protocol)){['barlow-condensed-latin-700','barlow-la
     <div class="field">
       <label for="f-note">Nota (opcional)</label>
       <input id="f-note" maxlength="120" placeholder="Ej: clase de 1 hora">
+    </div>
+    </div>
     </div>
     <div class="form-actions">
       <button type="button" class="btn out hidden" id="f-del">Eliminar</button>

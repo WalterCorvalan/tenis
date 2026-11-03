@@ -222,6 +222,7 @@ function render() {
   if (!movs.length) html += `<div class="banner"><span><b>Todavía no hay movimientos.</b> Tocar un día del calendario para cargar la primera clase.</span>${cfg ? '' : '<button class="btn" data-act="sample">Probar con datos de ejemplo</button>'}</div>`;
   html += ui.view === 'cal' ? renderCal() : renderSum();
   app.innerHTML = html;
+  app.dataset.view = ui.view;
   document.body.classList.toggle('sheet-open', ui.view === 'cal' && ui.sheet && isMobile());
 }
 
@@ -279,10 +280,9 @@ function renderCal() {
         <div class="stat out"><div class="l">Egresos del mes</div><div class="v">${mny(ms.o)}</div></div>
         <div class="stat tot"><div class="l">Balance</div><div class="v ${ms.bal < 0 ? 'deficit' : ''}">${mny(ms.bal)}</div></div>
       </div>
-      ${pendBar()}
-      ${goalSlim()}
+      <div class="infos">${pendBar()}${goalSlim()}</div>
       <div class="wk" aria-hidden="true">${DAYS_SHORT.map(d => `<div>${d}</div>`).join('')}</div>
-      <div class="grid">${cells}</div>
+      <div class="grid" style="--rows:${Math.round(((gridEnd - gridStart) / 864e5 + 1) / 7)}">${cells}</div>
     </section>
     ${renderPanel()}
   </div>`;
@@ -332,7 +332,7 @@ function panelInner() {
     </div>
     <div class="pad">
       <div class="mini">
-        <div><div class="l">Ingresos${n ? ` · ${n} cobro${n > 1 ? 's' : ''}` : ''}</div><div class="v pos">${mny(t.i)}</div></div>
+        <div><div class="l">Ingresos${n ? `<span class="cnt"> · ${n} cobro${n > 1 ? 's' : ''}</span>` : ''}</div><div class="v pos">${mny(t.i)}</div></div>
         <div><div class="l">Egresos</div><div class="v neg">${mny(t.o)}</div></div>
         <div class="bal"><div class="l">Balance del día</div><div class="v ${t.bal < 0 ? 'deficit' : ''}">${mny(t.bal)}</div></div>
         ${t.nc ? `<div class="pendnote cancelnote"><span class="l">Clases canceladas</span><span class="v">${t.nc}</span></div>` : ''}
@@ -440,6 +440,7 @@ function renderSum() {
     </div>
     ${ui.period === 'month' ? goalCard(s.getFullYear(), s.getMonth()) : ''}
     ${cancelBar(t, list)}
+    <div class="sumgrid">
     <div class="two">
       <div class="card pad">
         <h3>${ui.period === 'year' ? 'Mes por mes' : 'Día por día'}</h3>
@@ -459,6 +460,7 @@ function renderSum() {
     <div class="two" style="margin-top:16px">
       ${renderWhen(list)}
       <div class="stack">${renderPend()}${renderPacks()}</div>
+    </div>
     </div>
   </section>`;
 }
