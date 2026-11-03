@@ -32,7 +32,7 @@
     <button class="sync" id="sync-btn" data-state="off"><span class="dot" aria-hidden="true"></span><span class="lbl">Sin nube</span></button>
     <button class="theme-btn" id="theme-btn" type="button" aria-label="Cambiar el modo de color" title="Cambiar el modo de color"></button>
     <div class="menu-wrap">
-      <button class="icon-btn" id="menu-btn" aria-haspopup="true" aria-expanded="false" aria-label="Copias de seguridad y más opciones"><span class="lbl">Copia </span>⋯</button>
+      <button class="icon-btn" id="menu-btn" aria-haspopup="true" aria-expanded="false" aria-label="Opciones"><span class="lbl">Opciones </span>⋯</button>
       <div class="menu" id="menu" role="menu">
         <button role="menuitem" data-act="goal">Meta mensual…</button>
         <button role="menuitem" data-act="cloud">Guardar en la nube (Google Sheets)…</button>
@@ -135,15 +135,18 @@
     <h2 id="cloud-title">Guardar en la nube</h2>
     <p class="small muted" style="margin:0">Los datos se guardan en una planilla de Google Sheets de su cuenta y se comparten entre celular y computadora.</p>
     <p class="small muted" id="cloud-status" style="margin:0"></p>
-    <div class="field"><label for="c-url">URL de la aplicación web</label><input id="c-url" type="url" placeholder="https://script.google.com/macros/s/…/exec" spellcheck="false"></div>
-    <div class="field"><label for="c-key">Clave</label><input id="c-key" type="text" placeholder="La misma que está en el script" spellcheck="false" autocapitalize="off"></div>
+    <div class="field"><label for="c-url">URL de la planilla o código de conexión</label><input id="c-url" type="text" placeholder="https://script.google.com/macros/s/…/exec" spellcheck="false" autocapitalize="off" autocomplete="off"></div>
+    <div class="field hidden" id="c-code-row">
+      <label for="c-code">Código para conectar otro dispositivo</label>
+      <div class="copyrow"><input id="c-code" type="text" readonly><button type="button" class="btn" id="c-copy">Copiar código</button></div>
+      <span class="small muted">Es secreto: da acceso a los datos. Pegarlo en el otro dispositivo (Opciones → Guardar en la nube).</span>
+    </div>
     <div class="form-actions">
-      <button type="button" class="btn out hidden" id="c-off">Desconectar</button>
       <span class="grow"></span>
       <button type="button" class="btn" id="c-close">Cerrar</button>
       <button type="submit" class="btn primary">Guardar y conectar</button>
     </div>
-    <div class="form-actions hidden" id="c-now-row"><button type="button" class="btn link grow" id="c-now">Sincronizar ahora</button></div>
+    <div class="form-actions hidden" id="c-now-row"><button type="button" class="btn link" id="c-now">Sincronizar ahora</button><span class="grow"></span><button type="button" class="btn link danger" id="c-off">Desconectar</button></div>
   </form>
 </dialog>
 

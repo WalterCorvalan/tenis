@@ -8,8 +8,8 @@
  * columna "eliminado" (así se sincronizan con el celular y la computadora).
  */
 
-// ⚠ CAMBIAR por una clave larga y propia (la misma que se pone en la página).
-const CLAVE = 'cambiar-esta-clave';
+// No hay nada que configurar: la clave se genera sola la primera vez que se pega
+// la URL en la página ("vinculación") y queda guardada en este script.
 
 const HOJA = 'Movimientos';
 const COLUMNAS = ['id', 'fecha', 'hora', 'tipo', 'monto (ARS)', 'categoria', 'cliente', 'nota', 'actualizado', 'eliminado', 'pendiente', 'cancelada', 'motivo', 'pack (clases)', 'pack (id)'];
@@ -24,8 +24,12 @@ function hoja_() {
     sh = ss.insertSheet(HOJA);
     sh.appendRow(COLUMNAS);
     sh.setFrozenRows(1);
-    sh.getRange(1, 1, 1, COLUMNAS.length).setFontWeight('bold');
-    sh.setColumnWidth(1, 90);
+    const enc = sh.getRange(1, 1, 1, COLUMNAS.length);
+    enc.setFontWeight('bold');
+    enc.setBackground('#b4502a');
+    enc.setFontColor('#ffffff');
+    [90, 90, 55, 70, 100, 140, 150, 200, 100, 80, 80, 80, 130, 90, 100].forEach((w, i) => sh.setColumnWidth(i + 1, w));
+    sh.getRange(1, 1, sh.getMaxRows(), COLUMNAS.length).createFilter();
   }
   // Formatos: texto plano en las columnas de texto (evita que Sheets convierta fechas
   // o interprete como fórmula algo que empiece con "="); números en las numéricas.
@@ -127,9 +131,35 @@ function guardar_(sh, registros) {
   }
 }
 
+function claveGuardada_() {
+  return PropertiesService.getScriptProperties().getProperty('CLAVE') || '';
+}
+
+/**
+ * Vinculación: la primera vez que alguien pega la URL en la página, se genera una clave
+ * y se la devuelve. Desde ese momento todo pedido necesita esa clave. Si ya está vinculada,
+ * no entrega nada (para sumar otro dispositivo se usa el código que muestra el primero).
+ */
+function vincular_() {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    if (claveGuardada_()) {
+      return { ok: false, code: 'paired', error: 'Esta planilla ya está vinculada. En el otro dispositivo: Opciones → Guardar en la nube → “Código para otro dispositivo”, y pegarlo acá. (O, en la planilla: menú Tenis → Restablecer vinculación.)' };
+    }
+    const clave = (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, '');
+    PropertiesService.getScriptProperties().setProperty('CLAVE', clave);
+    hoja_();   // arma la hoja "Movimientos" con su estructura
+    return { ok: true, key: clave };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 function manejar_(clave, registros) {
-  if (!CLAVE || CLAVE === 'cambiar-esta-clave') return { ok: false, error: 'Falta definir CLAVE en el script.' };
-  if (clave !== CLAVE) return { ok: false, error: 'Clave incorrecta.' };
+  const guardada = claveGuardada_();
+  if (!guardada) return { ok: false, code: 'unpaired', error: 'Todavía no está vinculada. Pegar la URL en la página para vincularla.' };
+  if (clave !== guardada) return { ok: false, error: 'Clave incorrecta.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
@@ -148,6 +178,7 @@ function doGet(e) {
 function doPost(e) {
   let body;
   try { body = JSON.parse(e.postData.contents); } catch (err) { return json_({ ok: false, error: 'Pedido inválido.' }); }
+  if (body.action === 'pair') return json_(vincular_());
   return json_(manejar_(body.key, body.records));
 }
 
@@ -168,4 +199,17 @@ function onEdit(e) {
     }
     sh.getRange(f, COL_ACTUALIZADO).setValue(Date.now());
   }
+}
+
+/** Menú "Tenis" en la planilla: permite desvincular (genera una clave nueva en la próxima vinculación). */
+function onOpen() {
+  SpreadsheetApp.getUi().createMenu('Tenis').addItem('Restablecer vinculación…', 'restablecer').addToUi();
+}
+
+function restablecer() {
+  const ui = SpreadsheetApp.getUi();
+  const r = ui.alert('Restablecer vinculación',
+    'Se borra la clave actual. Los dispositivos conectados dejan de sincronizar hasta volver a pegar la URL en la página (Opciones → Guardar en la nube). Los datos de la planilla NO se borran.\n\n¿Continuar?',
+    ui.ButtonSet.YES_NO);
+  if (r === ui.Button.YES) PropertiesService.getScriptProperties().deleteProperty('CLAVE');
 }

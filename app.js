@@ -796,14 +796,14 @@ function scheduleSync(delay = 1500) {
   clearTimeout(syncTimer);
   syncTimer = setTimeout(sync, delay);
 }
-async function cloudCall(records) {
+async function post(url, body) {
   const ctl = new AbortController();
   const to = setTimeout(() => ctl.abort(), 30000);
   try {
-    const res = await fetch(cfg.url, {
+    const res = await fetch(url, {
       method: 'POST', redirect: 'follow', signal: ctl.signal,
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },   // evita el "preflight" CORS
-      body: JSON.stringify({ key: cfg.key, records })
+      body: JSON.stringify(body)
     });
     if (!res.ok) throw new Error('Respuesta HTTP ' + res.status);
     let data;
@@ -817,6 +817,9 @@ async function cloudCall(records) {
     throw e;
   } finally { clearTimeout(to); }
 }
+const cloudCall = records => post(cfg.url, { key: cfg.key, records });
+const pair = async url => (await post(url, { action: 'pair' })).key;   // la primera vez, la planilla entrega su clave
+
 /* Une lo recibido con lo local: para cada id gana el cambio más reciente. */
 function mergeRemote(remote) {
   const local = new Map();
@@ -864,16 +867,21 @@ async function sync() {
 const dlgCloud = $('#dlg-cloud');
 function openCloud() {
   $('#c-url').value = cfg ? cfg.url : '';
-  $('#c-key').value = cfg ? cfg.key : '';
   $('#c-off').classList.toggle('hidden', !cfg);
   $('#c-now-row').classList.toggle('hidden', !cfg);
+  showCode();
   showCloudStatus();
   dlgCloud.showModal();
+}
+function showCode() {
+  $('#c-code-row').classList.toggle('hidden', !cfg);
+  $('#c-code').value = cfg ? `${cfg.url}#${cfg.key}` : '';
+  $('#c-copy').textContent = 'Copiar código';
 }
 function showCloudStatus() {
   const el = $('#cloud-status');
   el.className = 'small ' + (syncState === 'error' ? 'neg' : syncState === 'ok' ? 'pos' : 'muted');
-  el.textContent = !cfg ? 'Todavía no está conectada. Pegar la URL y la clave que se generan siguiendo LEEME-NUBE.md.'
+  el.textContent = !cfg ? 'Pegar la URL que da Google al publicar el script. Si la planilla ya está conectada en otro dispositivo, pegar el código que muestra ese dispositivo.'
     : syncState === 'error' ? 'Problema: ' + syncMsg
     : syncState === 'ok' ? 'Conectada. ' + syncMsg
     : 'Conectada.';
@@ -882,23 +890,36 @@ $('#sync-btn').addEventListener('click', openCloud);
 $('#c-close').addEventListener('click', () => dlgCloud.close());
 dlgCloud.addEventListener('click', e => { if (e.target === dlgCloud) dlgCloud.close(); });
 $('#c-now').addEventListener('click', async () => { $('#cloud-status').textContent = 'Sincronizando…'; await sync(); showCloudStatus(); });
+$('#c-copy').addEventListener('click', async () => {
+  const el = $('#c-code');
+  try { await navigator.clipboard.writeText(el.value); } catch (e) { el.select(); try { document.execCommand('copy'); } catch (e2) {} }
+  $('#c-copy').textContent = '¡Copiado!';
+});
 $('#c-off').addEventListener('click', () => {
-  if (!confirm('¿Desconectar de la nube? Los datos siguen en este dispositivo y en la planilla, pero ya no se sincronizan.')) return;
+  if (!confirm('¿Desconectar de la nube? Los datos siguen en este dispositivo y en la planilla, pero ya no se sincronizan.\n\nPara volver a conectar vas a necesitar el código (se ve en esta misma ventana: copialo antes).')) return;
   cfg = null; lastPush = 0; try { localStorage.removeItem(KEY_CLOUD); } catch (e) {}
   persist(); setSync('off'); dlgCloud.close(); render();
 });
 $('#cloud-form').addEventListener('submit', async e => {
   e.preventDefault();
-  const url = $('#c-url').value.trim(), key = $('#c-key').value.trim();
+  const [urlPart, ...rest] = $('#c-url').value.trim().split('#');
+  const url = urlPart.trim(); let key = rest.join('#').trim();      // acepta "URL" o "URL#clave" (código de otro dispositivo)
   const st = $('#cloud-status');
-  if (!/^https:\/\/script\.google\.com\/.+\/exec$/.test(url)) { st.className = 'small neg'; st.textContent = 'La URL tiene que terminar en /exec y empezar con https://script.google.com/'; return; }
-  if (key.length < 8) { st.className = 'small neg'; st.textContent = 'La clave es muy corta (mínimo 8 caracteres).'; return; }
-  const prev = { cfg, lastPush };
-  cfg = { url, key }; lastPush = 0;
+  if (!/^https:\/\/script\.google\.com\/.+\/exec$/.test(url)) { st.className = 'small neg'; st.textContent = 'La URL tiene que empezar con https://script.google.com/ y terminar en /exec'; return; }
   st.className = 'small muted'; st.textContent = 'Conectando…';
+  const prev = { cfg, lastPush };
+  let justPaired = false;
+  if (!key) {
+    try { key = await pair(url); justPaired = true; }
+    catch (err) { st.className = 'small neg'; st.textContent = 'No se pudo conectar: ' + err.message; return; }
+  }
+  cfg = { url, key }; lastPush = 0;
+  if (justPaired) { try { localStorage.setItem(KEY_CLOUD, JSON.stringify(cfg)); } catch (e2) {} }   // la clave ya no se puede volver a pedir: guardarla enseguida
   if (await sync()) {
-    try { localStorage.setItem(KEY_CLOUD, JSON.stringify(cfg)); } catch (e) {}
-    dlgCloud.close(); render(); toast('Conectado a Google Sheets');
+    try { localStorage.setItem(KEY_CLOUD, JSON.stringify(cfg)); } catch (e2) {}
+    showCode(); dlgCloud.close(); render(); toast('Conectado a Google Sheets');
+  } else if (justPaired) {
+    showCode(); showCloudStatus(); render();       // vinculada; la sincronización se reintenta sola
   } else {
     const msg = syncMsg;
     cfg = prev.cfg; lastPush = prev.lastPush; setSync(cfg ? 'idle' : 'off');
