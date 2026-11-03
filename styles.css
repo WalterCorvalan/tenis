@@ -137,6 +137,8 @@ main{max-width:1120px;margin:0 auto;padding:18px 16px 100px}
 
 /* ---------- Panel del día ---------- */
 .panel{position:sticky;top:96px;overflow:hidden}
+.sheet-bg{display:none}
+.sheet-x{display:none;place-items:center;position:absolute;z-index:2;right:10px;top:10px;width:38px;height:38px;border:0;border-radius:var(--r);background:rgba(255,255,255,.2);color:#fff;font-size:1.2rem;line-height:1}
 .dayhead{position:relative;display:flex;align-items:center;gap:14px;padding:14px 18px;background:var(--head);color:#fff;overflow:hidden}
 .dayhead::after{content:"";position:absolute;right:-30px;top:-1px;bottom:-1px;width:150px;border-left:2px solid rgba(255,255,255,.25);border-right:2px solid rgba(255,255,255,.25);transform:skewX(-14deg);pointer-events:none}
 .dn{font:800 3.6rem/.85 var(--display)}
@@ -244,7 +246,7 @@ dialog::backdrop{background:rgba(35,16,8,.6)}
 .check{display:flex;align-items:center;gap:10px;font-weight:600;cursor:pointer;padding:9px 12px;border:1.5px dashed var(--line);border-radius:var(--r)}
 .check input{width:20px;height:20px;accent-color:var(--clay);flex:none}
 .check small{font-weight:500;color:var(--muted)}
-.check:has(input:checked){border-style:solid;border-color:var(--clay);background:var(--clay-pale)}
+.check.on{border-style:solid;border-color:var(--clay);background:var(--clay-pale)}
 .warn-inline{background:var(--clay-pale);border-left:4px solid var(--clay);border-radius:var(--r);padding:8px 12px;font-size:.9rem;font-weight:600}
 .tag{display:inline-block;margin-left:8px;background:var(--clay);color:var(--on-clay);font:800 .7rem var(--display);letter-spacing:.08em;text-transform:uppercase;padding:1px 6px;border-radius:3px;vertical-align:middle}
 .movwrap{display:flex;flex-direction:column;gap:4px;min-width:0}
@@ -329,22 +331,14 @@ dialog::backdrop{background:rgba(35,16,8,.6)}
 .fab:active{transform:scale(.94)}
 
 /* ---------- Movimiento y fluidez ---------- */
+/* Las animaciones cuestan: cada cuadro obliga a recalcular estilos. Solo quedan las que ayudan:
+   un fundido corto al abrir ventanas, el aviso y el indicador de sincronización. */
 @media (prefers-reduced-motion:no-preference){
-  .btn,.day,.mov,.col,.chip,.nav-btn,.tab{transition:background-color .12s,border-color .12s,color .12s,transform .08s}
-  .grid[data-dir="next"]{animation:slideNext .22s ease-out}
-  .grid[data-dir="prev"]{animation:slidePrev .22s ease-out}
-  @keyframes slideNext{from{opacity:.2;transform:translateX(14px)}}
-  @keyframes slidePrev{from{opacity:.2;transform:translateX(-14px)}}
-  .tl-item{animation:rise .24s ease-out both}
-  .tl-item:nth-child(2){animation-delay:.03s}.tl-item:nth-child(3){animation-delay:.06s}.tl-item:nth-child(4){animation-delay:.09s}
-  .tl-item:nth-child(5){animation-delay:.12s}.tl-item:nth-child(n+6){animation-delay:.15s}
-  @keyframes rise{from{opacity:0;transform:translateY(6px)}}
-  dialog[open]{animation:pop .18s ease-out}
-  dialog[open]::backdrop{animation:fade .18s ease-out}
-  @keyframes pop{from{opacity:0;transform:translateY(10px) scale(.98)}}
-  @keyframes fade{from{opacity:0}}
-  .toast{animation:toastIn .2s ease-out}
-  @keyframes toastIn{from{opacity:0;transform:translate(-50%,8px)}}
+  .btn,.day,.mov,.col,.chip,.nav-btn,.tab{transition:background-color .1s,border-color .1s,color .1s}
+  dialog[open]{animation:pop .12s ease-out}
+  @keyframes pop{from{opacity:0}}
+  .toast{animation:toastIn .15s ease-out}
+  @keyframes toastIn{from{opacity:0}}
   .sync[data-state="syncing"] .dot{animation:pulse 1s infinite alternate}
   @keyframes pulse{to{opacity:.25}}
 }
@@ -352,10 +346,20 @@ dialog::backdrop{background:rgba(35,16,8,.6)}
 /* ---------- Responsive ---------- */
 @media (max-width:900px){
   .layout{grid-template-columns:1fr}
-  .panel{position:static}
   .two{grid-template-columns:1fr}
   .fab{display:block}
+  /* El detalle del día es una hoja que sube desde abajo: no hay que hacer scroll para verlo. */
+  .panel{position:fixed;left:0;right:0;bottom:0;top:auto;z-index:40;max-height:86dvh;overflow:auto;overscroll-behavior:contain;border-radius:14px 14px 0 0;border-bottom:0;
+    transform:translateY(105%);visibility:hidden;transition:transform .2s ease-out,visibility 0s .2s;box-shadow:0 -14px 40px rgba(30,12,4,.35)}
+  .panel.open{transform:none;visibility:visible;transition:transform .2s ease-out}
+  .panel .pad{padding-bottom:calc(16px + env(safe-area-inset-bottom))}
+  .sheet-bg{display:none;position:fixed;inset:0;z-index:35;background:rgba(35,16,8,.5)}
+  body.sheet-open .sheet-bg{display:block}
+  body.sheet-open{overflow:hidden}
+  body.sheet-open .fab{display:none}
+  .sheet-x{display:grid}
 }
+@media (prefers-reduced-motion:reduce){ .panel,.panel.open{transition:none} }
 @media (max-width:600px){
   .top-in{padding:8px 12px 0;gap:8px}
   .brand{flex:1 0 100%;padding-bottom:2px}

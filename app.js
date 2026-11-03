@@ -17,6 +17,7 @@ let memoryOnly = false;
 let movs = [];          // movimientos vigentes
 let tombs = [];         // borrados {id, u}: hacen falta para que el borrado llegue a la nube
 let lastPush = 0;       // hasta cuándo se subieron los cambios locales a la nube
+let lastPull = 0, lastFull = 0;   // hora (de la planilla) de la última bajada, y de la última bajada completa
 let cfg = null;         // { url, key } de la nube, si está conectada
 let dataVer = 0;        // sube con cada cambio de datos (invalida el índice por día)
 loadAll();
@@ -28,7 +29,7 @@ function loadAll() {
       const d = JSON.parse(raw);
       movs = (d.movs || []).filter(validMov);
       tombs = (d.tombs || []).filter(t => t && t.id);
-      lastPush = d.lastPush || 0;
+      lastPush = d.lastPush || 0; lastPull = d.lastPull || 0; lastFull = d.lastFull || 0;
     } else {
       const old = localStorage.getItem(KEY_OLD); // versión anterior: lista simple
       if (old) { const now = Date.now(); movs = JSON.parse(old).filter(validMov).map(m => ({ ...m, u: now })); }
@@ -38,10 +39,15 @@ function loadAll() {
   } catch (e) { memoryOnly = true; }
 }
 function persist() {
-  try { localStorage.setItem(KEY, JSON.stringify({ movs, tombs, lastPush })); }
+  try { localStorage.setItem(KEY, JSON.stringify({ movs, tombs, lastPush, lastPull, lastFull })); }
   catch (e) { memoryOnly = true; render(); }
 }
-function save() { persist(); scheduleSync(); }
+/* Guardar en el dispositivo se hace un instante después (así la pantalla responde primero) y siempre antes de cerrar. */
+let persistTimer = 0;
+function save() { clearTimeout(persistTimer); persistTimer = setTimeout(persist, 150); scheduleSync(); }
+function flushPersist() { if (persistTimer) { clearTimeout(persistTimer); persistTimer = 0; persist(); } }
+window.addEventListener('pagehide', flushPersist);
+document.addEventListener('visibilitychange', () => { if (document.hidden) flushPersist(); });
 function validMov(m) {
   if (!m || typeof m.id !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(m.date) || (m.type !== 'in' && m.type !== 'out')) return false;
   const okAmt = Number.isFinite(m.amount) && (m.amount > 0 || (m.amount === 0 && (m.cancelled || m.packId)));
@@ -169,7 +175,14 @@ function goalCard(y, m) {
   return `<div class="card pad goal"><div class="goal-line"><div><div class="l">Meta de ${nm}</div><div class="gv">${mny(g.t.i)} <span class="muted">de</span> ${mny(goal)} <span class="gpct">${Math.round(g.t.i / goal * 100)}%</span></div></div><button class="btn" data-act="goal">Cambiar meta</button></div>${goalBar(g)}<div class="insight">${msg}</div></div>`;
 }
 
-const inRange = (a, b) => movs.filter(m => m.date >= a && m.date <= b);
+/* Movimientos entre dos fechas: se buscan día por día en el índice (no se recorre todo el historial). */
+function inRange(a, b) {
+  const span = Math.round((parse(b) - parse(a)) / 86400000);
+  if (span > 800) return movs.filter(m => m.date >= a && m.date <= b);
+  const idx = dayIndex(), out = [];
+  for (let d = parse(a), s = a; s <= b; d = addDays(d, 1), s = ymd(d)) { const l = idx.get(s); if (l) for (const m of l) out.push(m); }
+  return out;
+}
 let idxVer = -1, idxMap = new Map();
 function dayIndex() {
   if (idxVer !== dataVer) {
@@ -194,8 +207,9 @@ const ui = {
   sel: today(),
   period: 'month',
   anchor: today(),
-  dir: 0
+  sheet: false          // en pantallas chicas, el detalle del día es una hoja que sube desde abajo
 };
+const isMobile = () => window.matchMedia('(max-width:900px)').matches;
 const $ = s => document.querySelector(s);
 const app = $('#app');
 
@@ -208,19 +222,19 @@ function render() {
   if (!movs.length) html += `<div class="banner"><span><b>Todavía no hay movimientos.</b> Tocar un día del calendario para cargar la primera clase.</span>${cfg ? '' : '<button class="btn" data-act="sample">Probar con datos de ejemplo</button>'}</div>`;
   html += ui.view === 'cal' ? renderCal() : renderSum();
   app.innerHTML = html;
-  const g = app.querySelector('.grid');
-  if (g && ui.dir) { g.dataset.dir = ui.dir > 0 ? 'next' : 'prev'; ui.dir = 0; }
+  document.body.classList.toggle('sheet-open', ui.view === 'cal' && ui.sheet && isMobile());
 }
 
 /* Cambiar de día sin reconstruir todo el calendario (más rápido y sin saltos). */
-function selectDay(s, focus) {
+function selectDay(s, focus, open) {
   const prev = ui.sel, d = parse(s);
   ui.sel = s;
+  if (open && isMobile()) ui.sheet = true;
   if (d.getMonth() !== ui.m || d.getFullYear() !== ui.y) { ui.y = d.getFullYear(); ui.m = d.getMonth(); render(); }
   else {
     const set = (date, on) => { const b = app.querySelector(`[data-date="${date}"]`); if (b) { b.classList.toggle('sel', on); b.setAttribute('aria-pressed', on); } };
     set(prev, false); set(s, true);
-    const p = $('#panel'); if (p) p.outerHTML = renderPanel();
+    const p = $('#panel'); if (p) { p.innerHTML = panelInner(); if (open && isMobile()) openSheet(); }
   }
   if (focus) { const b = app.querySelector(`[data-date="${s}"]`); if (b) b.focus({ preventScroll: true }); }
 }
@@ -291,7 +305,7 @@ function tagsFor(m) {
 }
 const amtHtml = m => m.packId ? '<span class="packlbl">incluida</span>' : (m.cancelled && !m.amount ? '—' : mny(m.type === 'in' ? m.amount : -m.amount, m.type === 'in'));
 
-function renderPanel() {
+function panelInner() {
   const list = byDay(ui.sel).sort(byTime);
   const t = sums(list);
   const d = parse(ui.sel);
@@ -311,7 +325,7 @@ function renderPanel() {
     </li>`).join('');
   const n = t.ni;
   return `
-  <aside class="card panel" id="panel" aria-label="Detalle del día">
+    <button class="sheet-x" data-sheet-close aria-label="Cerrar el detalle del día">✕</button>
     <div class="dayhead">
       <div class="dn">${d.getDate()}</div>
       <div class="dt"><div class="dw">${esc(cap(DAYS_LONG[d.getDay()]))}${isToday ? '<span class="badge">hoy</span>' : ''}</div><div class="dm">${MONTHS[d.getMonth()]} ${d.getFullYear()}</div></div>
@@ -330,9 +344,11 @@ function renderPanel() {
       </div>
       <h3 class="agenda-h">Agenda del día</h3>
       ${list.length ? `<ol class="tl">${items}</ol>` : `<div class="empty">Nada cargado este día.<br>Agregar una clase cobrada o un gasto.</div>`}
-    </div>
-  </aside>`;
+    </div>`;
 }
+const renderPanel = () => `<aside class="card panel${ui.sheet ? ' open' : ''}" id="panel" aria-label="Detalle del día">${panelInner()}</aside><div class="sheet-bg" data-sheet-close></div>`;
+function openSheet() { ui.sheet = true; const p = $('#panel'); if (p) p.classList.add('open'); document.body.classList.add('sheet-open'); }
+function closeSheet() { ui.sheet = false; const p = $('#panel'); if (p) p.classList.remove('open'); document.body.classList.remove('sheet-open'); }
 
 /* ---------- Resumen ---------- */
 function getRange() {
@@ -580,6 +596,7 @@ function syncFormUI() {
     if (wasHidden && !editing && !reprog) $('#f-packuse').checked = true;     // si tiene pack, lo normal es descontar
   } else $('#f-packuse').checked = false;
   const using = !!pk && $('#f-packuse').checked;
+  row.classList.toggle('on', using);
   form.dataset.packId = using ? pk.id : '';
   if (using && form.state.value === 'pending') $('#s-paid').checked = true;
   $('#s-pending').disabled = using;
@@ -690,7 +707,7 @@ form.addEventListener('submit', e => {
     toast('Guardado');
   } else {
     dlg.close(); render();
-    if (wasReprog) toast('Clase reprogramada');
+    toast(wasReprog ? 'Clase reprogramada' : 'Guardado');
   }
 });
 
@@ -817,7 +834,7 @@ async function post(url, body) {
     throw e;
   } finally { clearTimeout(to); }
 }
-const cloudCall = records => post(cfg.url, { key: cfg.key, records });
+const cloudCall = (records, since) => post(cfg.url, { key: cfg.key, records, since });
 const pair = async url => (await post(url, { action: 'pair' })).key;   // la primera vez, la planilla entrega su clave
 
 /* Une lo recibido con lo local: para cada id gana el cambio más reciente. */
@@ -840,7 +857,9 @@ function mergeRemote(remote) {
   }
   return changed;
 }
-async function sync() {
+/* Bajar solo lo que cambió desde la última vez (con un margen por si los relojes no coinciden), y una bajada completa cada tanto. */
+const PULL_MARGIN = 6 * 3600e3, FULL_EVERY = 12 * 3600e3;
+async function sync(full = false) {
   if (!cfg) return false;
   if (syncing) { pendingSync = true; return false; }
   syncing = true; setSync('syncing');
@@ -848,9 +867,11 @@ async function sync() {
   let ok = false;
   try {
     const dirty = [...movs.filter(m => m.u > lastPush), ...tombs.filter(t => t.u > lastPush).map(t => ({ id: t.id, u: t.u, del: true }))];
-    const data = await cloudCall(dirty);
+    const since = (!full && lastPull && Date.now() - lastFull < FULL_EVERY) ? Math.max(1, lastPull - PULL_MARGIN) : 0;
+    const data = await cloudCall(dirty, since);
     const changed = mergeRemote(data.records);
     lastPush = started; lastOk = Date.now();
+    lastPull = data.now || Date.now(); if (!since) lastFull = Date.now();
     persist();
     setSync('ok', 'Última sincronización ' + new Date(lastOk).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }));
     if (changed) render();
@@ -889,7 +910,7 @@ function showCloudStatus() {
 $('#sync-btn').addEventListener('click', openCloud);
 $('#c-close').addEventListener('click', () => dlgCloud.close());
 dlgCloud.addEventListener('click', e => { if (e.target === dlgCloud) dlgCloud.close(); });
-$('#c-now').addEventListener('click', async () => { $('#cloud-status').textContent = 'Sincronizando…'; await sync(); showCloudStatus(); });
+$('#c-now').addEventListener('click', async () => { $('#cloud-status').textContent = 'Sincronizando…'; await sync(true); showCloudStatus(); });
 $('#c-copy').addEventListener('click', async () => {
   const el = $('#c-code');
   try { await navigator.clipboard.writeText(el.value); } catch (e) { el.select(); try { document.execCommand('copy'); } catch (e2) {} }
@@ -897,7 +918,7 @@ $('#c-copy').addEventListener('click', async () => {
 });
 $('#c-off').addEventListener('click', () => {
   if (!confirm('¿Desconectar de la nube? Los datos siguen en este dispositivo y en la planilla, pero ya no se sincronizan.\n\nPara volver a conectar vas a necesitar el código (se ve en esta misma ventana: copialo antes).')) return;
-  cfg = null; lastPush = 0; try { localStorage.removeItem(KEY_CLOUD); } catch (e) {}
+  cfg = null; lastPush = 0; lastPull = 0; lastFull = 0; try { localStorage.removeItem(KEY_CLOUD); } catch (e) {}
   persist(); setSync('off'); dlgCloud.close(); render();
 });
 $('#cloud-form').addEventListener('submit', async e => {
@@ -907,13 +928,13 @@ $('#cloud-form').addEventListener('submit', async e => {
   const st = $('#cloud-status');
   if (!/^https:\/\/script\.google\.com\/.+\/exec$/.test(url)) { st.className = 'small neg'; st.textContent = 'La URL tiene que empezar con https://script.google.com/ y terminar en /exec'; return; }
   st.className = 'small muted'; st.textContent = 'Conectando…';
-  const prev = { cfg, lastPush };
+  const prev = { cfg, lastPush, lastPull, lastFull };
   let justPaired = false;
   if (!key) {
     try { key = await pair(url); justPaired = true; }
     catch (err) { st.className = 'small neg'; st.textContent = 'No se pudo conectar: ' + err.message; return; }
   }
-  cfg = { url, key }; lastPush = 0;
+  cfg = { url, key }; lastPush = 0; lastPull = 0; lastFull = 0;
   if (justPaired) { try { localStorage.setItem(KEY_CLOUD, JSON.stringify(cfg)); } catch (e2) {} }   // la clave ya no se puede volver a pedir: guardarla enseguida
   if (await sync()) {
     try { localStorage.setItem(KEY_CLOUD, JSON.stringify(cfg)); } catch (e2) {}
@@ -922,7 +943,7 @@ $('#cloud-form').addEventListener('submit', async e => {
     showCode(); showCloudStatus(); render();       // vinculada; la sincronización se reintenta sola
   } else {
     const msg = syncMsg;
-    cfg = prev.cfg; lastPush = prev.lastPush; setSync(cfg ? 'idle' : 'off');
+    cfg = prev.cfg; lastPush = prev.lastPush; lastPull = prev.lastPull; lastFull = prev.lastFull; setSync(cfg ? 'idle' : 'off');
     st.className = 'small neg'; st.textContent = 'No se pudo conectar: ' + msg;
   }
 });
@@ -959,7 +980,7 @@ const menu = $('#menu'), menuBtn = $('#menu-btn');
 const closeMenu = () => { menu.classList.remove('open'); menuBtn.setAttribute('aria-expanded', 'false'); };
 menuBtn.addEventListener('click', e => { e.stopPropagation(); const o = menu.classList.toggle('open'); menuBtn.setAttribute('aria-expanded', o); });
 document.addEventListener('click', e => { if (!menu.contains(e.target)) closeMenu(); });
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeMenu(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeMenu(); if (ui.sheet && !document.querySelector('dialog[open]')) closeSheet(); } });
 
 menu.addEventListener('click', e => {
   const a = e.target.closest('[data-act]'); if (!a) return;
@@ -975,7 +996,7 @@ menu.addEventListener('click', e => {
 
 document.querySelector('.tabs').addEventListener('click', e => {
   const b = e.target.closest('[data-view]'); if (!b) return;
-  ui.view = b.dataset.view; render(); window.scrollTo({ top: 0 });
+  ui.view = b.dataset.view; ui.sheet = false; render(); window.scrollTo({ top: 0 });
 });
 $('#fab').addEventListener('click', () => openForm({ date: ui.sel }));
 
@@ -990,6 +1011,7 @@ app.addEventListener('click', e => {
   const t = e.target;
   let el;
   if ((el = t.closest('[data-new]'))) return openForm({ type: el.dataset.new, date: ui.sel });
+  if ((el = t.closest('[data-sheet-close]'))) return closeSheet();
   if ((el = t.closest('[data-act="goal"]'))) return openGoal();
   if ((el = t.closest('[data-edit]'))) return openForm({ id: el.dataset.edit });
   if ((el = t.closest('[data-pay]'))) {
@@ -1008,11 +1030,10 @@ app.addEventListener('click', e => {
     list.forEach(m => putMov({ ...m, pending: false })); save(); render();
     return toast('Marcado como cobrado', 'Deshacer', () => { before.forEach(putMov); save(); render(); });
   }
-  if ((el = t.closest('[data-goto]'))) { ui.view = 'cal'; selectDay(el.dataset.goto); render(); return window.scrollTo({ top: 0 }); }
+  if ((el = t.closest('[data-goto]'))) { ui.view = 'cal'; selectDay(el.dataset.goto, false, true); render(); return window.scrollTo({ top: 0 }); }
   if ((el = t.closest('[data-view-go]'))) { ui.view = el.dataset.viewGo; render(); return window.scrollTo({ top: 0 }); }
   if ((el = t.closest('[data-date]'))) {
-    selectDay(el.dataset.date);
-    if (window.matchMedia('(max-width:900px)').matches) $('#panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    selectDay(el.dataset.date, false, true);
     return;
   }
   if ((el = t.closest('[data-period]'))) { ui.period = el.dataset.period; return render(); }
@@ -1025,8 +1046,8 @@ app.addEventListener('click', e => {
   if ((el = t.closest('[data-act]'))) {
     switch (el.dataset.act) {
       case 'today': ui.y = new Date().getFullYear(); ui.m = new Date().getMonth(); ui.sel = today(); break;
-      case 'prev-month': ui.m--; ui.dir = -1; if (ui.m < 0) { ui.m = 11; ui.y--; } break;
-      case 'next-month': ui.m++; ui.dir = 1; if (ui.m > 11) { ui.m = 0; ui.y++; } break;
+      case 'prev-month': ui.m--; if (ui.m < 0) { ui.m = 11; ui.y--; } break;
+      case 'next-month': ui.m++; if (ui.m > 11) { ui.m = 0; ui.y++; } break;
       case 'sum-today': ui.anchor = today(); break;
       case 'sum-prev': shiftAnchor(-1); break;
       case 'sum-next': shiftAnchor(1); break;
@@ -1044,6 +1065,11 @@ app.addEventListener('keydown', e => {
   e.preventDefault();
   selectDay(ymd(addDays(parse(b.dataset.date), step)), true);
 });
+
+/* Instalable y sin señal: solo cuando se abre desde internet (no desde un archivo local). */
+if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+}
 
 setSync(syncState);
 render();

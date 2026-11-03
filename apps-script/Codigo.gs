@@ -54,28 +54,49 @@ function json_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
 
-function leer_(sh) {
+function aRegistro_(r) {
+  return {
+    id: String(r[0]),
+    date: String(r[1]),
+    time: hora_(r[2]),
+    type: String(r[3]).toLowerCase().charAt(0) === 'e' ? 'out' : 'in',
+    amount: Number(r[4]),
+    category: String(r[5]),
+    client: String(r[6]),
+    note: String(r[7]),
+    u: Number(r[8]) || 0,
+    del: String(r[9]).toUpperCase() === 'SI',
+    pending: String(r[10]).toUpperCase() === 'SI',
+    cancelled: String(r[11]).toUpperCase() === 'SI',
+    reason: String(r[12]),
+    packSize: Number(r[13]) || 0,
+    packId: String(r[14])
+  };
+}
+
+/**
+ * Lee los registros. Con "desde" (milisegundos) devuelve solo los modificados después de esa hora:
+ * lee únicamente la columna "actualizado" y luego solo las filas que cambiaron (mucho más rápido).
+ */
+function leer_(sh, desde) {
   const last = sh.getLastRow();
   if (last < 2) return [];
-  return sh.getRange(2, 1, last - 1, COLUMNAS.length).getValues()
-    .filter(r => r[0] !== '' && r[0] != null)
-    .map(r => ({
-      id: String(r[0]),
-      date: String(r[1]),
-      time: hora_(r[2]),
-      type: String(r[3]).toLowerCase().charAt(0) === 'e' ? 'out' : 'in',
-      amount: Number(r[4]),
-      category: String(r[5]),
-      client: String(r[6]),
-      note: String(r[7]),
-      u: Number(r[8]) || 0,
-      del: String(r[9]).toUpperCase() === 'SI',
-      pending: String(r[10]).toUpperCase() === 'SI',
-      cancelled: String(r[11]).toUpperCase() === 'SI',
-      reason: String(r[12]),
-      packSize: Number(r[13]) || 0,
-      packId: String(r[14])
-    }));
+  const n = COLUMNAS.length;
+  if (!(desde > 0)) {
+    return sh.getRange(2, 1, last - 1, n).getValues().filter(r => r[0] !== '' && r[0] != null).map(aRegistro_);
+  }
+  const us = sh.getRange(2, COL_ACTUALIZADO, last - 1, 1).getValues();
+  const out = [];
+  let i = 0;
+  while (i < us.length) {
+    if ((Number(us[i][0]) || 0) > desde) {
+      let j = i;
+      while (j + 1 < us.length && (Number(us[j + 1][0]) || 0) > desde) j++;
+      sh.getRange(i + 2, 1, j - i + 1, n).getValues().forEach(r => { if (r[0] !== '' && r[0] != null) out.push(aRegistro_(r)); });
+      i = j + 1;
+    } else i++;
+  }
+  return out;
 }
 
 /** Normaliza una hora a "HH:MM" (acepta "6:30", "06:30:00"). Vacío si no hay hora válida. */
@@ -111,9 +132,9 @@ function guardar_(sh, registros) {
   const last = sh.getLastRow();
   const existentes = {}; // id -> {fila, u}
   if (last >= 2) {
-    sh.getRange(2, 1, last - 1, COL_ACTUALIZADO).getValues().forEach((r, i) => {
-      if (r[0] !== '') existentes[String(r[0])] = { fila: i + 2, u: Number(r[COL_ACTUALIZADO - 1]) || 0 };
-    });
+    const ids = sh.getRange(2, 1, last - 1, 1).getValues();                       // solo 2 columnas, no toda la hoja
+    const us = sh.getRange(2, COL_ACTUALIZADO, last - 1, 1).getValues();
+    ids.forEach((r, i) => { if (r[0] !== '') existentes[String(r[0])] = { fila: i + 2, u: Number(us[i][0]) || 0 }; });
   }
   const nuevas = [];
   registros.forEach(m => {
@@ -156,7 +177,7 @@ function vincular_() {
   }
 }
 
-function manejar_(clave, registros) {
+function manejar_(clave, registros, desde) {
   const guardada = claveGuardada_();
   if (!guardada) return { ok: false, code: 'unpaired', error: 'Todavía no está vinculada. Pegar la URL en la página para vincularla.' };
   if (clave !== guardada) return { ok: false, error: 'Clave incorrecta.' };
@@ -165,21 +186,21 @@ function manejar_(clave, registros) {
   try {
     const sh = hoja_();
     guardar_(sh, registros);
-    return { ok: true, records: leer_(sh) };
+    return { ok: true, records: leer_(sh, desde), now: Date.now() };
   } finally {
     lock.releaseLock();
   }
 }
 
 function doGet(e) {
-  return json_(manejar_(e && e.parameter && e.parameter.key, []));
+  return json_(manejar_(e && e.parameter && e.parameter.key, [], Number(e && e.parameter && e.parameter.since) || 0));
 }
 
 function doPost(e) {
   let body;
   try { body = JSON.parse(e.postData.contents); } catch (err) { return json_({ ok: false, error: 'Pedido inválido.' }); }
   if (body.action === 'pair') return json_(vincular_());
-  return json_(manejar_(body.key, body.records));
+  return json_(manejar_(body.key, body.records, Number(body.since) || 0));
 }
 
 /**

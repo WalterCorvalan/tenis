@@ -6,6 +6,7 @@ Sistema simple para un entrenador de tenis: **calendario** + **ingresos y egreso
 
 Abrir `index.html` en el navegador (doble clic). No necesita instalar nada ni conexión a internet.
 
+- **En el celular**: al tocar un día, el detalle y la agenda suben desde abajo (se cierran con ✕, tocando el fondo o con Esc), sin tener que hacer scroll. Se puede instalar como app (ver `LEEME-NUBE.md`).
 - **Calendario**: cada día muestra lo cobrado (verde) y lo gastado (oscuro). Tocar un día (o moverse con las flechas del teclado) para ver su **agenda con horarios** y cargar un **ingreso** (clase cobrada) o un **egreso** (cancha, pelotas, transporte…).
 - **Horarios**: cada movimiento puede llevar cualquier hora (06:30, 07:30, 14:33…). La agenda del día se ordena sola por horario. Con “Guardar y agregar otra clase” se sugiere la hora siguiente (1 h después).
 - **Pendiente de cobro**: al cargar una clase se puede tildar “Todavía no me pagó”. No suma a los ingresos hasta marcarla como cobrada; mientras tanto aparece como **Por cobrar** (en el calendario, en la agenda del día y en el Resumen, con el total que debe cada cliente).
@@ -31,5 +32,6 @@ Conviene igual descargar una copia de seguridad de vez en cuando (menú “Opcio
 - `styles.css` – estilos (arcilla y líneas de cancha; claro/oscuro automático; adaptado a celular)
 - `fonts/` – tipografías Barlow y Barlow Condensed (licencia SIL OFL), incluidas para que funcione sin internet
 - `app.js` – lógica y sincronización
+- `sw.js`, `manifest.webmanifest`, `icons/` – para instalarla como app y que abra al instante y sin señal
 - `apps-script/Codigo.gs` – script de Google que conecta con la planilla
 - `LEEME-NUBE.md` – guía de configuración

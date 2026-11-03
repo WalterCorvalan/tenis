@@ -78,6 +78,9 @@ Se puede **corregir una fila a mano** en la planilla y el cambio llega a la pág
 # Publicar la página en GitHub Pages
 
 1. En GitHub: **Settings → Pages → Build and deployment → Source: Deploy from a branch → Branch: `master` / carpeta `/ (root)` → Save**.
-2. En un minuto la página queda en `https://waltercorvalan.github.io/tenis/`. Abrir ese link en el celular y agregarlo a la pantalla de inicio (en Chrome: ⋮ → *Agregar a pantalla principal*).
+2. En un minuto la página queda en `https://waltercorvalan.github.io/tenis/`.
+3. **Instalarla como app en el celular:** abrir ese link en Chrome → ⋮ → **Instalar app** (o *Agregar a pantalla principal*). Queda con su ícono, se abre a pantalla completa, arranca al instante y **funciona sin señal** (en la cancha); cuando vuelve internet se sincroniza sola. En iPhone: Safari → compartir → *Agregar a pantalla de inicio*.
+
+> **Cuando se publica una versión nueva:** la app guarda una copia para abrir rápido, así que la primera vez que se abre después de una actualización todavía puede mostrar la versión anterior; **a la segunda vez ya queda actualizada** (cerrar y volver a abrir).
 
 > GitHub Pages es gratis con repositorios públicos. En repositorios privados requiere un plan de pago de GitHub. Como el repositorio no contiene datos ni claves (solo el código), puede ser público sin problema.
